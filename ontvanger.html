@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>Zaterdagtv ontvanger</title>
+<script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+<style>
+  html,body{margin:0;height:100%;background:#000;color:#fff;font-family:sans-serif;overflow:hidden}
+  #speler{position:absolute;inset:0;width:100%;height:100%}
+  #welkom{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+          font-size:64px;font-weight:bold;background:#16244F;color:#FFC93C}
+  #status{position:absolute;left:24px;bottom:24px;font-size:22px;background:rgba(0,0,0,.7);
+          padding:8px 14px;border-radius:8px;max-width:80%;z-index:5}
+</style>
+</head>
+<body>
+<div id="welkom">Zaterdagochtend-tv</div>
+<div id="speler"></div>
+<div id="status">Ontvanger start…</div>
+
+<script>
+const NS = "urn:x-cast:nl.zaterdagtv";
+const ctx = cast.framework.CastReceiverContext.getInstance();
+let speler = null, apiKlaar = false, wachtend = null;
+
+function log(tekst){
+  document.getElementById("status").textContent = tekst;
+  try{ ctx.sendCustomMessage(NS, undefined, { status: tekst }); }catch(e){}
+}
+
+/* Berichten van de telefoon */
+ctx.addCustomMessageListener(NS, e => {
+  let d = e.data;
+  if(typeof d === "string"){ try{ d = JSON.parse(d); }catch(x){} }
+  if(d.type === "play") speel(d.videoId);
+  if(d.type === "pause" && speler) speler.pauseVideo();
+  if(d.type === "resume" && speler) speler.playVideo();
+});
+
+const opties = new cast.framework.CastReceiverOptions();
+opties.disableIdleTimeout = true;
+opties.skipPlayersLoad = true;
+opties.maxInactivity = 3600;
+ctx.start(opties);
+log("Ontvanger klaar. Wacht op een video…");
+
+/* YouTube-speler */
+const tag = document.createElement("script");
+tag.src = "https://www.youtube.com/iframe_api";
+document.head.appendChild(tag);
+window.onYouTubeIframeAPIReady = () => {
+  apiKlaar = true;
+  if(wachtend){ speel(wachtend); wachtend = null; }
+};
+
+function speel(id){
+  if(!apiKlaar){ wachtend = id; log("YouTube laadt nog…"); return; }
+  document.getElementById("welkom").style.display = "none";
+  log("Video laden: " + id);
+  if(!speler){
+    speler = new YT.Player("speler", {
+      width:"100%", height:"100%", videoId:id,
+      playerVars:{ autoplay:1, controls:0, rel:0, playsinline:1, iv_load_policy:3 },
+      events:{
+        onReady: e => e.target.playVideo(),
+        onStateChange: e => {
+          const namen = {"-1":"niet gestart","0":"afgelopen","1":"speelt","2":"pauze","3":"laden","5":"klaargezet"};
+          log("Status: " + (namen[e.data] || e.data));
+        },
+        onError: e => log("YouTube-fout " + e.data + (e.data==101||e.data==150 ? " (inbedden niet toegestaan)" : ""))
+      }
+    });
+  } else {
+    speler.loadVideoById(id);
+  }
+}
+</script>
+</body>
+</html>

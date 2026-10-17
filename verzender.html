@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zaterdagtv test</title>
+<style>
+  body{font-family:sans-serif;margin:0;padding:20px;background:#EAF3FF;color:#16244F}
+  h1{font-size:24px;margin:0 0 16px}
+  .blok{background:#fff;border-radius:12px;padding:16px;margin-bottom:14px}
+  label{display:block;font-size:14px;margin-bottom:6px}
+  input{width:100%;box-sizing:border-box;font-size:18px;padding:10px;border:2px solid #9AA3C0;border-radius:8px}
+  button{font-size:18px;padding:12px 16px;border:0;border-radius:8px;background:#E8483B;color:#fff;margin:8px 8px 0 0}
+  button.grijs{background:#5B6894}
+  google-cast-launcher{display:inline-block;width:48px;height:48px;--connected-color:#E8483B;--disconnected-color:#16244F}
+  #log{font-family:monospace;font-size:13px;white-space:pre-wrap;max-height:220px;overflow:auto}
+</style>
+<script>
+  /* App ID komt uit het invulveld en wordt in de telefoon onthouden */
+  let APP_ID = "";
+  try{ APP_ID = localStorage.getItem("zaterdagtv-appid") || ""; }catch(e){}
+</script>
+<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+</head>
+<body>
+<h1>Zaterdagtv: casttest</h1>
+
+<div class="blok">
+  <label for="appid">1. Application ID uit de Cast Console</label>
+  <input id="appid" placeholder="bijv. A1B2C3D4">
+  <button class="grijs" id="bewaar">Bewaar en herlaad</button>
+</div>
+
+<div class="blok">
+  <label>2. Verbind met de Chromecast</label>
+  <google-cast-launcher></google-cast-launcher>
+  <div id="verbinding">Niet verbonden</div>
+</div>
+
+<div class="blok">
+  <label for="video">3. YouTube-video-ID</label>
+  <input id="video" value="o39DfO5Om6A">
+  <button id="speel">Speel op tv</button>
+  <button class="grijs" id="pauze">Pauze</button>
+  <button class="grijs" id="verder">Verder</button>
+</div>
+
+<div class="blok"><label>Logboek</label><div id="log"></div></div>
+
+<script>
+const NS = "urn:x-cast:nl.zaterdagtv";
+const $ = id => document.getElementById(id);
+$("appid").value = APP_ID;
+
+function log(t){ $("log").textContent = new Date().toLocaleTimeString() + "  " + t + "\n" + $("log").textContent; }
+
+$("bewaar").onclick = () => {
+  try{ localStorage.setItem("zaterdagtv-appid", $("appid").value.trim()); }catch(e){}
+  location.reload();
+};
+
+window.__onGCastApiAvailable = function(beschikbaar){
+  if(!beschikbaar){ log("Casten niet beschikbaar in deze browser. Gebruik Chrome."); return; }
+  if(!APP_ID){ log("Vul eerst het Application ID in."); return; }
+  const ctx = cast.framework.CastContext.getInstance();
+  ctx.setOptions({ receiverApplicationId: APP_ID, autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED });
+  log("Cast klaar met app " + APP_ID + ". Druk op het cast-icoon.");
+
+  ctx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, e => {
+    log("Sessie: " + e.sessionState);
+    const s = ctx.getCurrentSession();
+    if(s && (e.sessionState === "SESSION_STARTED" || e.sessionState === "SESSION_RESUMED")){
+      $("verbinding").textContent = "Verbonden met " + s.getCastDevice().friendlyName;
+      s.addMessageListener(NS, (ns, bericht) => {
+        try{ log("Tv zegt: " + JSON.parse(bericht).status); }catch(x){ log("Tv zegt: " + bericht); }
+      });
+    }
+    if(e.sessionState === "SESSION_ENDED") $("verbinding").textContent = "Niet verbonden";
+  });
+};
+
+function stuur(obj){
+  const s = window.cast && cast.framework && cast.framework.CastContext.getInstance().getCurrentSession();
+  if(!s){ log("Nog niet verbonden met de Chromecast."); return; }
+  s.sendMessage(NS, obj).then(() => log("Verstuurd: " + obj.type), err => log("Fout bij versturen: " + err));
+}
+$("speel").onclick  = () => stuur({ type:"play", videoId: $("video").value.trim() });
+$("pauze").onclick  = () => stuur({ type:"pause" });
+$("verder").onclick = () => stuur({ type:"resume" });
+</script>
+</body>
+</html>
