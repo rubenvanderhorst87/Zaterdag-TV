@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>Zaterdagtv ontvanger</title>
+<script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--nacht:#16244F;--zon:#FFC93C;--wit:#F3F6FF}
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;
+    font-family:"Baloo 2",ui-rounded,"Arial Rounded MT Bold",sans-serif}
+  #spelerdoos{position:absolute;inset:0}
+  #spelerdoos iframe{width:100%;height:100%;border:0}
+  .scherm{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;transition:opacity .5s}
+  .uit{opacity:0;pointer-events:none}
+
+  #welkom{background:var(--nacht);color:var(--wit)}
+  #welkom h1{font-size:120px;line-height:1;color:var(--zon);margin:0;font-weight:800}
+  #welkom p{font-size:38px;margin:14px 0 46px;opacity:.85}
+  #gids{display:flex;flex-wrap:wrap;gap:18px;justify-content:center;max-width:1500px;padding:0 60px}
+  .chip{display:flex;align-items:center;gap:14px;font-size:32px;font-weight:700;
+    padding:8px 28px 8px 10px;border-radius:999px;background:rgba(255,255,255,.1)}
+  .chip i{width:44px;height:44px;border-radius:50%}
+
+  #kaart{color:var(--nacht);transition:opacity .5s, background .5s}
+  #kKlein{font-size:46px;font-weight:500}
+  #kNaam{font-size:160px;font-weight:800;line-height:.95;max-width:1600px}
+  #kDaarna{font-size:34px;opacity:.75;margin-top:30px;min-height:1.2em}
+  #klok{width:120px;margin-top:34px}
+  #klok .ring{fill:none;stroke:var(--nacht);stroke-width:10;stroke-linecap:round;stroke-dasharray:283;
+    stroke-dashoffset:283;transform:rotate(-90deg);transform-origin:50% 50%}
+  #klok.loopt .ring{animation:klok linear forwards}
+  @keyframes klok{to{stroke-dashoffset:0}}
+
+  #pauze{background:rgba(22,36,79,.95);color:var(--wit);font-size:60px;font-weight:800}
+  #pauze svg{width:150px;margin-bottom:20px}
+
+  #einde{background:var(--nacht);color:var(--wit)}
+  #einde h2{font-size:96px;margin:20px 0 0;line-height:1;font-weight:800}
+  #einde p{font-size:40px;opacity:.8}
+  #status{position:absolute;right:24px;bottom:16px;z-index:20;font-size:18px;color:rgba(255,255,255,.35);font-family:sans-serif}
+</style>
+</head>
+<body>
+<div id="spelerdoos"><div id="speler"></div></div>
+
+<section id="welkom" class="scherm">
+  <h1 id="wTitel">Zaterdagochtend-tv</h1>
+  <p id="wSub">Klaar voor de uitzending</p>
+  <div id="gids"></div>
+</section>
+
+<section id="kaart" class="scherm uit">
+  <div id="kKlein">Straks</div>
+  <div id="kNaam"></div>
+  <svg id="klok" viewBox="0 0 100 100" aria-hidden="true">
+    <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(22,36,79,.18)" stroke-width="10"/>
+    <circle class="ring" cx="50" cy="50" r="45"/>
+  </svg>
+  <div id="kDaarna"></div>
+</section>
+
+<section id="pauze" class="scherm uit">
+  <svg viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.6" height="8" rx=".6" fill="#FFC93C"/><rect x="5.9" y="1" width="2.6" height="8" rx=".6" fill="#FFC93C"/></svg>
+  Even pauze
+</section>
+
+<section id="einde" class="scherm uit">
+  <svg width="200" viewBox="0 0 100 100" aria-hidden="true">
+    <g stroke="#FFC93C" stroke-width="7" stroke-linecap="round">
+      <line x1="50" y1="6" x2="50" y2="18"/><line x1="50" y1="82" x2="50" y2="94"/>
+      <line x1="6" y1="50" x2="18" y2="50"/><line x1="82" y1="50" x2="94" y2="50"/>
+      <line x1="19" y1="19" x2="27" y2="27"/><line x1="73" y1="73" x2="81" y2="81"/>
+      <line x1="19" y1="81" x2="27" y2="73"/><line x1="73" y1="27" x2="81" y2="19"/>
+    </g>
+    <circle cx="50" cy="50" r="24" fill="#FFC93C"/>
+    <path d="M40 54 Q50 64 60 54" stroke="#16244F" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <circle cx="42" cy="45" r="3" fill="#16244F"/><circle cx="58" cy="45" r="3" fill="#16244F"/>
+  </svg>
+  <h2>Dat was het voor vandaag!</h2>
+  <p>Volgende week zijn er nieuwe afleveringen.</p>
+</section>
+
+<div id="status"></div>
+
+<script>
+const NS = "urn:x-cast:nl.zaterdagtv";
+const ctx = cast.framework.CastReceiverContext.getInstance();
+const $ = id => document.getElementById(id);
+
+let speler = null, apiKlaar = false, wachtStart = null, run = 0;
+let plan = [], idx = 0, k = 0, skips = 0, ids = null, fase = "rust";
+let gespeeld = 0, grens = 0, huidigDuur = 0, kaartKlaar = false, wachtLijst = false, nuTekst = "klaar";
+
+function later(fn, ms){ const r = run; return setTimeout(() => { if(r === run) fn(); }, ms); }
+function toon(id){ ["welkom","kaart","pauze","einde"].forEach(x => $(x).classList.toggle("uit", x !== id)); }
+function meld(t){ $("status").textContent = t; }
+function stuur(obj){ try{ ctx.sendCustomMessage(NS, undefined, obj); }catch(e){} }
+function stuurNu(){ stuur({ type:"nu", fase, tekst:nuTekst }); }
+
+/* ---------- Berichten van de telefoon ---------- */
+ctx.addCustomMessageListener(NS, e => {
+  let d = e.data;
+  if(typeof d === "string"){ try{ d = JSON.parse(d); }catch(x){ return; } }
+  if(d.type === "start"){ if(apiKlaar) begin(d); else wachtStart = d; }
+  if(d.type === "pause" && fase === "video") speler.pauseVideo();
+  if(d.type === "resume" && fase === "video") speler.playVideo();
+  if(d.type === "stop") einde();
+  if(d.type === "status") stuurNu();
+});
+const opties = new cast.framework.CastReceiverOptions();
+opties.disableIdleTimeout = true;
+opties.skipPlayersLoad = true;
+opties.maxInactivity = 3600;
+ctx.start(opties);
+
+/* ---------- YouTube ---------- */
+const tag = document.createElement("script");
+tag.src = "https://www.youtube.com/iframe_api";
+document.head.appendChild(tag);
+window.onYouTubeIframeAPIReady = () => {
+  speler = new YT.Player("speler", {
+    width:"100%", height:"100%",
+    playerVars:{ controls:0, disablekb:1, fs:0, rel:0, iv_load_policy:3, modestbranding:1, playsinline:1, cc_load_policy:0 },
+    events:{
+      onReady(){ apiKlaar = true; meld("klaar"); if(wachtStart){ begin(wachtStart); wachtStart = null; } },
+      onStateChange: opStatus,
+      onError: opFout
+    }
+  });
+};
+
+/* ---------- Het blok ---------- */
+function begin(d){
+  run++;
+  plan = d.plan || []; idx = 0; gespeeld = 0;
+  grens = ((d.doelMin || 60) + (d.spelingMin || 5)) * 60;
+  try{ speler.stopVideo(); }catch(e){}
+  $("wTitel").textContent = "Goedemorgen!";
+  $("wSub").textContent = "Vandaag op Zaterdagochtend-tv";
+  $("gids").innerHTML = "";
+  plan.forEach(p => {
+    const c = document.createElement("div"); c.className = "chip";
+    c.innerHTML = `<i style="background:${p.kleur}"></i>`;
+    c.append(p.naam + (p.aantal > 1 ? " ×" + p.aantal : ""));
+    $("gids").appendChild(c);
+  });
+  fase = "welkom"; nuTekst = "welkom"; toon("welkom"); stuurNu();
+  later(volgendItem, 8000);
+}
+
+function volgendItem(){
+  if(idx >= plan.length) return einde();
+  k = 0; skips = 0; ids = null;
+  kaart(true);
+  laadLijst();
+}
+
+function kaart(nieuw){
+  const it = plan[idx], volgende = plan[idx + 1];
+  fase = "kaart"; kaartKlaar = false;
+  $("kaart").style.background = it.kleur;
+  $("kKlein").textContent = nieuw ? "Straks" : "Nog een aflevering van";
+  $("kNaam").textContent = it.naam;
+  $("kDaarna").textContent = nieuw ? (volgende ? "Daarna: " + volgende.naam : "Daarna: tot volgende week") : "";
+  const ms = nieuw ? 6000 : 3000, klok = $("klok");
+  klok.classList.remove("loopt"); void klok.getBBox();
+  klok.querySelector(".ring").style.animationDuration = ms + "ms";
+  klok.classList.add("loopt");
+  toon("kaart");
+  nuTekst = it.naam + " (" + (k + 1) + "/" + it.aantal + ")"; stuurNu();
+  later(() => { kaartKlaar = true; probeerStart(); }, ms);
+}
+
+function leesLijst(){ try{ const pl = speler.getPlaylist(); return pl && pl.length ? pl : null; }catch(e){ return null; } }
+
+function laadLijst(){
+  wachtLijst = true;
+  speler.cuePlaylist({ list:plan[idx].lijst, listType:"playlist", index:0 });
+  later(() => {
+    if(!wachtLijst) return;
+    const pl = leesLijst();
+    if(pl) return lijstKlaar(pl);
+    wachtLijst = false; meld("Playlist van " + plan[idx].naam + " laadt niet");
+    idx++; volgendItem();
+  }, 10000);
+}
+function lijstKlaar(pl){ wachtLijst = false; ids = pl; peil(); }
+
+/* Video stil inladen achter de kaart en de lengte meten */
+function peil(){
+  const it = plan[idx];
+  if(skips > 8){ idx++; return volgendItem(); }
+  fase = "peilen";
+  const v = ids[(it.start + k + skips) % ids.length];
+  try{ speler.mute(); }catch(e){}
+  speler.loadVideoById(v);
+  const nummer = skips;
+  later(() => { if(fase === "peilen" && skips === nummer){ skips++; peil(); } }, 15000);
+}
+
+function peilDuur(){
+  if(fase !== "peilen") return;
+  const d = speler.getDuration();
+  if(!d){ later(peilDuur, 400); return; }
+  speler.pauseVideo(); speler.seekTo(0, true);
+  const it = plan[idx];
+  if(d > it.maxMin * 60){ meld("Overgeslagen: te lang (" + Math.round(d/60) + " min)"); skips++; return peil(); }
+  if(gespeeld > 0 && gespeeld + d > grens){ return einde(); }
+  huidigDuur = d; fase = "gereed"; probeerStart();
+}
+
+function probeerStart(){
+  if(fase !== "gereed" || !kaartKlaar) return;
+  fase = "startend";
+  later(() => {
+    try{ speler.unMute(); speler.setVolume(100); }catch(e){}
+    speler.seekTo(0, true); speler.playVideo();
+    fase = "video"; toon(null);
+    try{ speler.unloadModule("captions"); }catch(e){}
+  }, 300);
+}
+
+function klaarMetAflevering(){
+  gespeeld += huidigDuur; k++;
+  if(k < plan[idx].aantal){ kaart(false); peil(); }
+  else { idx++; volgendItem(); }
+}
+
+function opStatus(e){
+  const S = YT.PlayerState;
+  if(wachtLijst){ const pl = leesLijst(); if(pl) lijstKlaar(pl); return; }
+  if(fase === "peilen" && e.data === S.PLAYING){ peilDuur(); return; }
+  if(fase === "video"){
+    if(e.data === S.PLAYING){ toon(null); }
+    else if(e.data === S.PAUSED){ toon("pauze"); }
+    else if(e.data === S.ENDED){ klaarMetAflevering(); }
+  }
+}
+
+function opFout(e){
+  meld("YouTube-fout " + e.data);
+  if(["peilen","gereed","startend","video"].includes(fase)){
+    if(fase === "video" || fase === "startend") kaart(false);
+    skips++; peil();
+  }
+}
+
+function einde(){
+  run++;
+  fase = "einde"; nuTekst = "afgelopen";
+  try{ speler.stopVideo(); }catch(e){}
+  toon("einde"); stuurNu();
+}
+</script>
+</body>
+</html>
