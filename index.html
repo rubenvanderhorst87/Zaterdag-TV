@@ -275,9 +275,9 @@ function teken(){
   else if(totaal < doel - 3) bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Er is nog ruimte voor zo’n ${doel - totaal} minuten.`;
   else bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Het blok zit vol.`;
 
-  const kiesbaar = [...S.lib].filter(x => x.lijst && x.rol !== "uit").sort((a,b) => (a.rol === "tussendoor" ? 0 : 1) - (b.rol === "tussendoor" ? 0 : 1));
+  const kiesbaar = S.lib.filter(x => x.lijst && x.rol === "tussendoor");
   const picker = na => `<div class="picker"><p>${na < 0 ? "Aan het begin zetten:" : "Invoegen na " + esc(rijen[na].naam) + ":"}</p>
-    <div class="chips">${kiesbaar.map(x => `<button data-kies="${x.id}"><span class="stip" style="background:${x.kleur}"></span>${esc(x.naam)}</button>`).join("")}</div>
+    <div class="chips">${kiesbaar.length ? "" : "<p>Nog geen tussendoortjes. Zet bij Programma’s een serie op Tussen.</p>"}${kiesbaar.map(x => `<button data-kies="${x.id}"><span class="stip" style="background:${x.kleur}"></span>${esc(x.naam)}</button>`).join("")}</div>
     <button class="annuleer" data-annuleer="1">Annuleren</button></div>`;
   $("gids").innerHTML = (invoegNa === -1 && !vast ? `<li>${picker(-1)}</li>` : "") + (rijen.map((p, i) => `<li class="${p.rol === "tussendoor" ? "isTussen" : ""}">
     <div class="regel1"><span class="stip" style="background:${p.kleur}"></span>
