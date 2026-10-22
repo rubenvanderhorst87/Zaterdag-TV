@@ -190,6 +190,8 @@ main,section{min-width:0}
         <div class="stap"><button data-inst="speling" data-d="-1" aria-label="Minder">−</button><output id="instSpeling"></output><button data-inst="speling" data-d="1" aria-label="Meer">+</button></div></div>
       <div class="regel"><span>Wisselplekken<small>Aantal wisselseries per uitzending</small></span>
         <div class="stap"><button data-inst="plekken" data-d="-1" aria-label="Minder">−</button><output id="instPlekken"></output><button data-inst="plekken" data-d="1" aria-label="Meer">+</button></div></div>
+      <div class="regel"><span>Aankondiging<small>Hoe lang de aankondiging van een nieuw programma duurt</small></span>
+        <div class="stap"><button data-inst="kaartSec" data-d="-1" aria-label="Korter">−</button><output id="instKaart"></output><button data-inst="kaartSec" data-d="1" aria-label="Langer">+</button></div></div>
       <div class="regel"><span>Maximaal prikkelniveau<small>Series daarboven komen niet in de uitzending</small></span>
         <div class="stap"><button data-inst="maxPrikkel" data-d="-1" aria-label="Lager">−</button><output id="instMax" style="text-align:center;white-space:nowrap"></output><button data-inst="maxPrikkel" data-d="1" aria-label="Hoger">+</button></div></div>
       <label class="regel"><span>Cast-app-ID</span><input id="instApp" style="max-width:140px"></label>
@@ -328,6 +330,7 @@ function teken(){
   $("instSpeling").textContent = S.inst.speling + " min";
   $("instPlekken").textContent = S.inst.plekken;
   $("instMax").textContent = PRIKKEL[maxP()];
+  $("instKaart").textContent = (S.inst.kaartSec || 11) + " sec";
   $("instApp").value = S.inst.appId;
 }
 
@@ -420,8 +423,8 @@ $("toevoegen").onclick = () => {
 };
 document.querySelector(".inst").addEventListener("click", e => {
   const b = e.target.closest("button[data-inst]"); if(!b) return;
-  const k = b.dataset.inst, min = { doel:10, speling:0, plekken:0, maxPrikkel:0 }[k], max = { doel:180, speling:20, plekken:6, maxPrikkel:PRIKKEL.length - 1 }[k];
-  if(S.inst[k] === undefined) S.inst[k] = max;
+  const k = b.dataset.inst, min = { doel:10, speling:0, plekken:0, maxPrikkel:0, kaartSec:3 }[k], max = { doel:180, speling:20, plekken:6, maxPrikkel:PRIKKEL.length - 1, kaartSec:20 }[k];
+  if(S.inst[k] === undefined) S.inst[k] = k === "kaartSec" ? 11 : max;
   S.inst[k] = Math.min(max, Math.max(min, S.inst[k] + +b.dataset.d));
   bewaar(); teken();
 });
@@ -496,7 +499,7 @@ $("start").onclick = () => {
     bewaar();
   }
   const v = S.vandaag;
-  stuur({ type:"start", doelMin:S.inst.doel, spelingMin:S.inst.speling,
+  stuur({ type:"start", doelMin:S.inst.doel, spelingMin:S.inst.speling, kaartSec:S.inst.kaartSec || 11,
     gids: v.rijen.filter(p => p.rol !== "tussendoor").map(p => ({ naam:p.naam, kleur:p.kleur, aantal:p.aantal })),
     slots: v.slots.map(x => ({ naam:x.naam, kleur:x.kleur, lijst:x.lijst, index:x.index, maxMin:x.maxMin, soort:x.soort, teller:x.teller, daarna:x.daarna })) });
   S.meldingen = { lijst:[] }; bewaar();

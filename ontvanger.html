@@ -33,7 +33,10 @@
   #kNaam{font-size:124px;font-weight:800;line-height:.95;max-width:1600px}
   .beeldlijst{margin-top:28px;width:480px;aspect-ratio:16/9;border-radius:22px;overflow:hidden;
     background:rgba(22,36,79,.15);border:8px solid var(--nacht)}
-  #kBeeld{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .5s}
+  .beeldlijst{position:relative;background:linear-gradient(100deg,rgba(255,255,255,.18) 30%,rgba(255,255,255,.45) 50%,rgba(255,255,255,.18) 70%);
+    background-size:300% 100%;animation:glans 1.4s linear infinite}
+  @keyframes glans{from{background-position:100% 0}to{background-position:-100% 0}}
+  #kBeeld{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .3s}
   #kBeeld.zicht{opacity:1}
   .onder{display:flex;align-items:center;gap:22px;margin-top:26px}
   #klok{width:70px}
@@ -100,14 +103,15 @@
 
 <script>
 const NS = "urn:x-cast:nl.zaterdagtv";
-const KAART_MS = { nieuw:11000, zelfde:5000, tussen:5000 };
+let KAART_MS = { nieuw:11000, zelfde:5000, tussen:5000 };
+let toonVanaf = 0;
 const ctx = cast.framework.CastReceiverContext.getInstance();
 const $ = id => document.getElementById(id);
 const wacht = ms => new Promise(res => setTimeout(res, ms));
 
 let speler = null, meter = null, klaarTeller = 0, apiKlaar = false, wachtStart = null, run = 0;
 let slots = [], si = 0, fase = "rust", gespeeld = 0, grens = 0, huidig = null, pauzeDoorOuder = false, nuTekst = "klaar";
-let lijsten = {}, offset = {}, prep = {}, prepRes = {}, prepGen = 0, meterWacht = null, eersteVan = {};
+let lijsten = {}, lijstIds = {}, offset = {}, prep = {}, prepRes = {}, prepGen = 0, meterWacht = null, eersteVan = {}, eindeWacht = null;
 
 function later(fn, ms){ const r = run; return setTimeout(() => { if(r === run) fn(); }, ms); }
 function toon(id){ ["welkom","kaart","pauze","einde"].forEach(x => $(x).classList.toggle("uit", x !== id)); }
@@ -202,7 +206,7 @@ function meterVraag(soort, start, ms, bijTimeout, extra){
   });
 }
 function haalLijst(l){
-  if(!lijsten[l]) lijsten[l] = meterVraag("lijst", () => { try{ meter.stopVideo(); }catch(x){} meter.cuePlaylist({ list:l, listType:"playlist", index:0 }); }, 10000, [], { lijst:l });
+  if(!lijsten[l]) lijsten[l] = meterVraag("lijst", () => { try{ meter.stopVideo(); }catch(x){} meter.cuePlaylist({ list:l, listType:"playlist", index:0 }); }, 10000, [], { lijst:l }).then(ids => { lijstIds[l] = ids; return ids; });
   return lijsten[l];
 }
 async function meet(v){
@@ -250,9 +254,11 @@ function vergeetVanaf(i){ prepGen++; Object.keys(prep).forEach(k => { if(+k >= i
 /* ---------- De uitzending ---------- */
 function begin(d){
   run++;
-  slots = d.slots || []; si = 0; gespeeld = 0; offset = {}; lijsten = {}; prep = {};   /* eersteVan blijft bewaard: zo herkennen we ook een playlist van een vorige uitzending */
+  slots = d.slots || []; si = 0; gespeeld = 0; offset = {}; lijsten = {}; lijstIds = {}; prep = {};   /* eersteVan blijft bewaard: zo herkennen we ook een playlist van een vorige uitzending */
    prepRes = {}; prepGen++; meterWacht = null;
   grens = ((d.doelMin || 60) + (d.spelingMin || 5)) * 60;
+  const k = Math.max(3, Math.min(20, d.kaartSec || 11)) * 1000;
+  KAART_MS = { nieuw:k, zelfde:Math.min(5000, k), tussen:Math.min(5000, k) };
   try{ speler.stopVideo(); meter.stopVideo(); }catch(e){}
   const uur = new Date().getHours();
   $("wTitel").textContent = uur < 12 ? "Goedemorgen!" : uur < 18 ? "Goedemiddag!" : "Goedenavond!";
@@ -274,11 +280,16 @@ async function speelSlot(){
   while(si < slots.length && prepRes.hasOwnProperty(si) && prepRes[si] === null) si++;   /* bekend onspeelbaar: stil overslaan */
   if(si >= slots.length) return einde();
   const i = si, sl = slots[i];
+  const kaartMs = KAART_MS[sl.soort] || 5000, kaartStart = Date.now();
   kaart(sl, prepRes[i]);
-  const [res] = await Promise.all([voorbereid(i), wacht(KAART_MS[sl.soort] || 5000)]);
+  const res = await voorbereid(i);
   if(r !== run || i !== si) return;
   if(!res){ si++; return speelSlot(); }
   if(gespeeld > 0 && gespeeld + res.d > grens) return einde();
+  /* De video al 2,5 seconden voor het einde van de aankondiging laten laden: dan valt de laadtijd binnen de aankondiging */
+  await wacht(Math.max(0, kaartStart + kaartMs - 2500 - Date.now()));
+  if(r !== run || i !== si) return;
+  toonVanaf = kaartStart + kaartMs;
   huidig = res; fase = "startend"; pauzeDoorOuder = false;
   try{ speler.unMute(); speler.setVolume(100); }catch(e){}
   speler.loadVideoById(res.v);
@@ -293,8 +304,18 @@ function kaart(sl, res){
   $("kDaarna").textContent = sl.soort === "nieuw" ? (sl.daarna ? "Daarna: " + sl.daarna : "Daarna: tot de volgende keer") : "";
   const img = $("kBeeld");
   img.classList.remove("zicht"); img.removeAttribute("src");
-  const zet = v => { if(slots[si] !== sl) return; img.onload = () => img.classList.add("zicht"); img.src = beeldUrl(v); };
-  if(res) zet(res.v); else voorbereid(si).then(x => { if(x) zet(x.v); });
+  let getoond = null;
+  const zet = v => {
+    if(slots[si] !== sl || v === getoond) return;
+    getoond = v; img.classList.remove("zicht");
+    img.onload = () => img.classList.add("zicht"); img.src = beeldUrl(v);
+  };
+  if(res) zet(res.v);
+  else {
+    const ids = lijstIds[sl.lijst];          /* playlist al bekend: meteen de verwachte aflevering tonen */
+    if(ids && ids.length) zet(ids[(sl.index + (offset[sl.lijst] || 0)) % ids.length]);
+    voorbereid(si).then(x => { if(x) zet(x.v); });
+  }
   const ms = KAART_MS[sl.soort] || 5000, klok = $("klok");
   klok.classList.remove("loopt"); void klok.getBBox();
   klok.querySelector(".ring").style.animationDuration = ms + "ms";
@@ -311,7 +332,15 @@ function spelerStatus(e){
     const id = huidigeId(speler);
     if(id && huidig && id !== huidig.v) return;        /* seintje van een vorige video: negeren */
     fase = "video";
-    later(() => { if(fase === "video" && !pauzeDoorOuder) toon(null); }, 1200);
+    later(() => { if(fase === "video" && !pauzeDoorOuder) toon(null); }, Math.max(700, toonVanaf - Date.now()));
+    /* In de laatste 25 seconden de volgende aflevering alvast meten (alleen als die nog niet bekend is) */
+    clearInterval(eindeWacht);
+    const ditSlot = si, r0 = run;
+    eindeWacht = setInterval(() => {
+      if(r0 !== run || si !== ditSlot || fase !== "video"){ clearInterval(eindeWacht); return; }
+      let t = 0; try{ t = speler.getCurrentTime(); }catch(x){}
+      if(huidig && t >= huidig.d - 25){ clearInterval(eindeWacht); voorbereid(ditSlot + 1); }
+    }, 2000);
     /* Tijdens het kijken alleen de playlist van de volgende plek ophalen: dat is licht.
        Meten (video laden) gebeurt pas tijdens de aankondiging, zodat de Chromecast nooit twee video's tegelijk verwerkt. */
     const volgende = slots[si + 1];
@@ -342,7 +371,7 @@ function spelerFout(e){
 }
 
 function einde(){
-  run++; prepGen++; meterWacht = null;
+  run++; clearInterval(eindeWacht); prepGen++; meterWacht = null;
   fase = "einde"; nuTekst = "afgelopen";
   try{ speler.stopVideo(); meter.stopVideo(); }catch(e){}
   toon("einde"); stuurNu();
