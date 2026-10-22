@@ -83,6 +83,12 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
 #bezig{background:var(--nacht);color:#fff;border-radius:14px;padding:14px;margin-top:4px}
 #bezig .nu{font-size:20px;font-weight:700;margin-bottom:10px}
 #bezig .knop{background:rgba(255,255,255,.14);color:#fff;flex:1}
+#volume{display:flex;align-items:center;gap:8px;margin-top:12px}
+#volume[hidden]{display:none}
+#volume span{font-weight:700;min-width:62px}
+#volume button{width:40px;height:40px;border-radius:10px;border:0;background:var(--veld);font-size:20px;font-weight:700;flex:none}
+#volume input{flex:1;accent-color:var(--zon);height:30px}
+#volume output{min-width:40px;text-align:right;color:var(--zacht)}
 #melding{font-size:14px;color:var(--zacht);margin-top:8px;min-height:1em}
 #meldingen{margin-top:12px;border-top:1px solid var(--lijn);padding-top:10px}
 #meldingen h3{margin:0 0 6px;font-size:17px}
@@ -150,6 +156,13 @@ main,section{min-width:0}
         <button class="knop" id="verder">Verder</button>
         <button class="knop" id="stop">Stop</button>
       </div>
+    </div>
+    <div id="volume" hidden>
+      <span>Volume</span>
+      <button id="volMin" aria-label="Zachter">−</button>
+      <input type="range" id="volSchuif" min="0" max="100" step="1" aria-label="Volume van de tv">
+      <button id="volPlus" aria-label="Harder">+</button>
+      <output id="volTekst"></output>
     </div>
     <div id="melding"></div>
     <div id="meldingen" hidden><h3>Overgeslagen in deze uitzending</h3><ul id="meldLijst"></ul></div>
@@ -321,6 +334,8 @@ function tekenBediening(){
   $("start").disabled = !sessie;
   $("start").textContent = !sessie ? "Verbind eerst met de tv" : gestartVandaag() ? "Deze uitzending opnieuw afspelen" : "Start de uitzending";
   if(loopt) $("nuTekst").textContent = "Nu op tv: " + nu.tekst;
+  $("volume").hidden = !sessie;
+  if(sessie) toonVolume();
 }
 
 function voegMeldingToe(t){
@@ -450,6 +465,7 @@ window.__onGCastApiAvailable = ok => {
         }catch(x){}
       });
       stuur({ type:"status" });
+      try{ s.addEventListener(cast.framework.SessionEventType.VOLUME_CHANGED, toonVolume); }catch(x){}
       $("melding").textContent = "";
     }
     if(e.sessionState === "SESSION_ENDED") nu = null;
@@ -475,6 +491,25 @@ $("start").onclick = () => {
   nu = { fase:"welkom", tekst:"welkom" };
   teken();
 };
+/* ---------- Volume van de Chromecast ---------- */
+function toonVolume(){
+  const s = huidigeSessie(); if(!s) return;
+  let v = 0.5; try{ v = s.getVolume(); }catch(e){}
+  if(typeof v !== "number") v = 0.5;
+  if(document.activeElement !== $("volSchuif")) $("volSchuif").value = Math.round(v * 100);
+  $("volTekst").textContent = Math.round(v * 100) + "%";
+}
+function zetVolume(pct){
+  const s = huidigeSessie(); if(!s) return;
+  pct = Math.max(0, Math.min(100, pct));
+  $("volSchuif").value = pct; $("volTekst").textContent = pct + "%";
+  try{ s.setVolume(pct / 100); }catch(e){ $("melding").textContent = "Volume aanpassen lukte niet."; }
+}
+$("volSchuif").addEventListener("input", e => { $("volTekst").textContent = e.target.value + "%"; });
+$("volSchuif").addEventListener("change", e => zetVolume(+e.target.value));
+$("volMin").onclick = () => zetVolume(+$("volSchuif").value - 5);
+$("volPlus").onclick = () => zetVolume(+$("volSchuif").value + 5);
+
 $("pauze").onclick = () => stuur({ type:"pause" });
 $("verder").onclick = () => stuur({ type:"resume" });
 $("stop").onclick = () => { if(confirm("De uitzending stoppen?")) stuur({ type:"stop" }); };
