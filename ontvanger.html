@@ -87,7 +87,7 @@
     <path d="M40 54 Q50 64 60 54" stroke="#16244F" stroke-width="4" fill="none" stroke-linecap="round"/>
     <circle cx="42" cy="45" r="3" fill="#16244F"/><circle cx="58" cy="45" r="3" fill="#16244F"/>
   </svg>
-  <h2>Dat was het voor vandaag!</h2>
+  <h2>Dat was KinderTV!</h2>
   <p>Volgende keer zijn er nieuwe afleveringen.</p>
 </section>
 
@@ -155,8 +155,9 @@ function begin(d){
   slots = d.slots || []; si = 0; gespeeld = 0; cache = {}; offset = {};
   grens = ((d.doelMin || 60) + (d.spelingMin || 5)) * 60;
   try{ speler.stopVideo(); }catch(e){}
-  $("wTitel").textContent = "Goedemorgen!";
-  $("wSub").textContent = "Vandaag op KinderTV";
+  const uur = new Date().getHours();
+  $("wTitel").textContent = uur < 12 ? "Goedemorgen!" : uur < 18 ? "Goedemiddag!" : "Goedenavond!";
+  $("wSub").textContent = "Zo meteen op KinderTV";
   $("gids").innerHTML = "";
   (d.gids || []).forEach(p => {
     const c = document.createElement("div"); c.className = "chip";

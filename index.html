@@ -130,17 +130,17 @@ main,section{min-width:0}
 
 <main>
   <section id="vandaag">
-    <h2 id="vandaagTitel">Deze zaterdag</h2>
+    <h2 id="vandaagTitel">Deze keer</h2>
     <div class="balkwrap"><div class="balk" id="balk"></div><div class="doel" id="doelstreep"></div></div>
     <div id="balkTekst"></div>
-    <div id="eigenVolgorde" hidden>Je hebt deze week zelf geschikt. Standaardvolgorde zet alles terug.</div>
+    <div id="eigenVolgorde" hidden>Je hebt deze uitzending zelf samengesteld. Standaardvolgorde zet alles terug.</div>
     <ol class="gids" id="gids"></ol>
     <div class="knoppen" style="margin-bottom:12px">
       <button class="knop" id="begin">+ Aan het begin</button>
       <button class="knop" id="hussel">Husselen</button>
       <button class="knop" id="rustig">Standaardvolgorde</button>
       <button class="knop" id="andereWissel">Andere wisselseries</button>
-      <button class="knop" id="nieuwPlan" hidden>Nieuw plan voor vandaag</button>
+      <button class="knop" id="nieuwPlan" hidden>Nieuwe uitzending plannen</button>
     </div>
     <button class="knop hoofd" id="start" disabled>Verbind eerst met de tv</button>
     <div id="bezig" hidden>
@@ -152,12 +152,12 @@ main,section{min-width:0}
       </div>
     </div>
     <div id="melding"></div>
-    <div id="meldingen" hidden><h3>Overgeslagen vandaag</h3><ul id="meldLijst"></ul></div>
+    <div id="meldingen" hidden><h3>Overgeslagen in deze uitzending</h3><ul id="meldLijst"></ul></div>
   </section>
 
   <section>
     <h2>Programma’s</h2>
-    <p class="uitleg">Kern komt elke week. Wissel rouleert per week. Tussen is voor korte filmpjes zoals liedjes: die zet je zelf in het blok met de + bij een programma. Tik op een naam om de playlist en de duur aan te passen.</p>
+    <p class="uitleg">Kern komt elke keer. Wissel wisselt per uitzending. Tussen is voor korte filmpjes zoals liedjes: die zet je zelf in het blok met de + bij een programma. Tik op een naam om de playlist en de duur aan te passen.</p>
     <div id="lijst"></div>
     <button class="knop" id="toevoegen" style="margin-top:10px">Serie toevoegen</button>
   </section>
@@ -169,7 +169,7 @@ main,section{min-width:0}
         <div class="stap"><button data-inst="doel" data-d="-5" aria-label="Korter">−</button><output id="instDoel"></output><button data-inst="doel" data-d="5" aria-label="Langer">+</button></div></div>
       <div class="regel"><span>Speling<small>Zoveel minuten mag het uitlopen</small></span>
         <div class="stap"><button data-inst="speling" data-d="-1" aria-label="Minder">−</button><output id="instSpeling"></output><button data-inst="speling" data-d="1" aria-label="Meer">+</button></div></div>
-      <div class="regel"><span>Wisselplekken<small>Aantal wisselseries per week</small></span>
+      <div class="regel"><span>Wisselplekken<small>Aantal wisselseries per uitzending</small></span>
         <div class="stap"><button data-inst="plekken" data-d="-1" aria-label="Minder">−</button><output id="instPlekken"></output><button data-inst="plekken" data-d="1" aria-label="Meer">+</button></div></div>
       <label class="regel"><span>Cast-app-ID</span><input id="instApp" style="max-width:140px"></label>
       <button class="knop" id="resetAfl">Alle series opnieuw bij aflevering 1 laten beginnen</button>
@@ -182,7 +182,6 @@ const NS = "urn:x-cast:nl.zaterdagtv";
 const SLEUTEL = "zaterdagochtend-tv-v1";
 const PRIKKEL = ["extreem laag","laag","laag tot gemiddeld","gemiddeld"];
 const KLEUREN = ["#FFC93C","#F7A8C8","#7FD6B9","#9EC5FF","#FF8A5B","#C9A7FF","#B5E07A","#FFB3A1","#8FE3E8","#F2D07A","#A7B8FF","#E5A3D6","#9ED6A0","#FFD3A1","#BFC8D9"];
-const EPOCH = new Date("2026-01-03T00:00:00"); /* een zaterdag: de week wisselt op zaterdag */
 
 /* Startbibliotheek uit Rubens lijst */
 const STANDAARD = [
@@ -211,14 +210,14 @@ function bewaar(){ try{ localStorage.setItem(SLEUTEL, JSON.stringify(S)); }catch
 const $ = id => document.getElementById(id);
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
 const vandaagStr = () => { const d = new Date(); return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); };
-const weekNr = () => Math.floor((Date.now() - EPOCH.getTime()) / (7*864e5));
+const ronde = () => S.nr || 0;  /* teller van uitzendingen: wissel en eigen volgorde horen bij één uitzending */
 let open = null, nu = null;
 
-/* ---------- Het plan van deze week ---------- */
+/* ---------- Het plan van de volgende uitzending ---------- */
 function programmas(){
   const kern = S.lib.filter(s => s.rol === "kern" && s.lijst);
   const wissel = S.lib.filter(s => s.rol === "wissel" && s.lijst);
-  const w = weekNr();
+  const w = ronde();
   const extra = S.extra.week === w ? S.extra.n : 0;
   const n = Math.min(S.inst.plekken, wissel.length);
   const keuze = [];
@@ -235,11 +234,11 @@ function programmas(){
 const serie = id => S.lib.find(x => x.id === id);
 let invoegNa = null;
 function entriesNu(){
-  if(S.week && S.week.week === weekNr())
+  if(S.week && S.week.week === ronde())
     return S.week.entries.filter(e => { const x = serie(e.id); return x && x.lijst && x.rol !== "uit"; });
   return programmas().map(p => ({ id:p.id, aantal:p.aantal }));
 }
-function zetEntries(entries){ S.week = { week:weekNr(), entries }; invoegNa = null; bewaar(); teken(); }
+function zetEntries(entries){ S.week = { week:ronde(), entries }; invoegNa = null; bewaar(); teken(); }
 function bouwSlots(entries){
   const teller = {}, slots = [];
   entries.forEach((en, ei) => {
@@ -256,7 +255,7 @@ function bouwSlots(entries){
   });
   return slots;
 }
-const gestartVandaag = () => !!(S.vandaag && S.vandaag.datum === vandaagStr() && S.vandaag.slots && S.vandaag.rijen);
+const gestartVandaag = () => !!(S.vandaag && S.vandaag.tijd && Date.now() - S.vandaag.tijd < 3*3600e3 && S.vandaag.slots && S.vandaag.rijen);
 
 /* ---------- Tekenen ---------- */
 function teken(){
@@ -293,9 +292,9 @@ function teken(){
       <button class="erna" data-plus="${i}" aria-expanded="${invoegNa === i}">+ erna</button>
       <button class="klein" data-weg="${i}" aria-label="Weghalen">×</button></div>`}
     ${invoegNa === i && !vast ? picker(i) : ""}</li>`).join("") || `<li>Zet minstens één serie op kern of wissel, of voeg iets toe.</li>`);
-  $("eigenVolgorde").hidden = vast || !(S.week && S.week.week === weekNr());
+  $("eigenVolgorde").hidden = vast || !(S.week && S.week.week === ronde());
   $("begin").hidden = vast;
-  $("vandaagTitel").textContent = gestartVandaag() ? "Vandaag op tv" : "Deze zaterdag";
+  $("vandaagTitel").textContent = gestartVandaag() ? "Laatste uitzending" : "Deze keer";
   $("andereWissel").hidden = vast; $("hussel").hidden = vast; $("rustig").hidden = vast;
   $("nieuwPlan").hidden = !gestartVandaag();
 
@@ -315,19 +314,19 @@ function tekenBediening(){
   $("bezig").hidden = !loopt;
   $("start").hidden = loopt;
   $("start").disabled = !sessie;
-  $("start").textContent = !sessie ? "Verbind eerst met de tv" : gestartVandaag() ? "Blok van vandaag opnieuw afspelen" : "Start de uitzending";
+  $("start").textContent = !sessie ? "Verbind eerst met de tv" : gestartVandaag() ? "Deze uitzending opnieuw afspelen" : "Start de uitzending";
   if(loopt) $("nuTekst").textContent = "Nu op tv: " + nu.tekst;
 }
 
 function voegMeldingToe(t){
   const d = new Date(), tijd = d.getHours() + ":" + String(d.getMinutes()).padStart(2,"0");
-  if(!S.meldingen || S.meldingen.datum !== vandaagStr()) S.meldingen = { datum:vandaagStr(), lijst:[] };
+  if(!S.meldingen) S.meldingen = { lijst:[] };
   S.meldingen.lijst.unshift({ tijd, tekst:t });
   S.meldingen.lijst = S.meldingen.lijst.slice(0, 20);
   bewaar(); tekenMeldingen();
 }
 function tekenMeldingen(){
-  const m = S.meldingen && S.meldingen.datum === vandaagStr() ? S.meldingen.lijst : [];
+  const m = S.meldingen ? S.meldingen.lijst : [];
   $("meldingen").hidden = !m.length;
   $("meldLijst").innerHTML = m.map(x => `<li><time>${x.tijd}</time>${esc(x.tekst)}</li>`).join("");
 }
@@ -399,7 +398,7 @@ document.querySelector(".inst").addEventListener("click", e => {
 $("instApp").onchange = e => { S.inst.appId = e.target.value.trim(); bewaar(); location.reload(); };
 $("resetAfl").onclick = () => { if(confirm("Alle series weer bij aflevering 1 laten beginnen?")){ S.ptr = {}; S.vandaag = null; bewaar(); teken(); } };
 $("andereWissel").onclick = () => {
-  const w = weekNr(); S.extra = { week:w, n:(S.extra.week === w ? S.extra.n : 0) + 1 }; S.week = null; bewaar(); teken();
+  const w = ronde(); S.extra = { week:w, n:(S.extra.week === w ? S.extra.n : 0) + 1 }; S.week = null; bewaar(); teken();
 };
 $("gids").addEventListener("click", e => {
   const b = e.target.closest("button"); if(!b) return;
@@ -458,14 +457,15 @@ $("start").onclick = () => {
     const entries = entriesNu(), slots = bouwSlots(entries);
     const rijen = entries.map(e => { const x = serie(e.id); return { id:x.id, naam:x.naam, kleur:x.kleur, aantal:e.aantal, duur:x.duur, rol:x.rol }; });
     slots.forEach(x => { S.ptr[x.id] = Math.max(S.ptr[x.id] || 0, x.index + 1); });
-    S.vandaag = { datum:vandaagStr(), rijen, slots };
+    S.vandaag = { datum:vandaagStr(), tijd:Date.now(), rijen, slots };
+    S.nr = ronde() + 1;
     bewaar();
   }
   const v = S.vandaag;
   stuur({ type:"start", doelMin:S.inst.doel, spelingMin:S.inst.speling,
     gids: v.rijen.filter(p => p.rol !== "tussendoor").map(p => ({ naam:p.naam, kleur:p.kleur, aantal:p.aantal })),
     slots: v.slots.map(x => ({ naam:x.naam, kleur:x.kleur, lijst:x.lijst, index:x.index, maxMin:x.maxMin, soort:x.soort, teller:x.teller, daarna:x.daarna })) });
-  S.meldingen = { datum:vandaagStr(), lijst:[] }; bewaar();
+  S.meldingen = { lijst:[] }; bewaar();
   nu = { fase:"welkom", tekst:"welkom" };
   teken();
 };
