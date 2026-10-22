@@ -57,7 +57,8 @@ ol.gids .pijl{border:0;background:var(--veld);border-radius:8px;width:32px;heigh
 ol.gids .pijl:disabled{opacity:.3}
 ol.gids li{display:block}
 ol.gids .regel1{display:flex;align-items:center;gap:10px}
-ol.gids .acties{display:flex;align-items:center;gap:6px;margin-top:6px;padding-left:26px}
+ol.gids .acties{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;padding-left:26px}
+@media (max-width:380px){ ol.gids .acties{padding-left:0} }
 ol.gids .acties .ruimte{flex:1}
 ol.gids .erna{border:0;background:var(--veld);border-radius:8px;height:32px;padding:0 10px;font-size:15px;font-weight:600;flex:none}
 ol.gids .nm{flex:1;min-width:0}
@@ -85,10 +86,10 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
 #bezig .knop{background:rgba(255,255,255,.14);color:#fff;flex:1}
 #volume{display:flex;align-items:center;gap:8px;margin-top:12px}
 #volume[hidden]{display:none}
-#volume span{font-weight:700;min-width:62px}
+#volume span{font-weight:700}
 #volume button{width:40px;height:40px;border-radius:10px;border:0;background:var(--veld);font-size:20px;font-weight:700;flex:none}
-#volume input{flex:1;accent-color:var(--zon);height:30px}
-#volume output{min-width:40px;text-align:right;color:var(--zacht)}
+#volume input{flex:1;min-width:0;width:100%;accent-color:var(--zon);height:30px}
+#volume output{min-width:44px;text-align:right;color:var(--zacht);flex:none}
 #melding{font-size:14px;color:var(--zacht);margin-top:8px;min-height:1em}
 #meldingen{margin-top:12px;border-top:1px solid var(--lijn);padding-top:10px}
 #meldingen h3{margin:0 0 6px;font-size:17px}
@@ -121,8 +122,8 @@ main,section{min-width:0}
 .weg{color:var(--tomaat);background:none;border:0;justify-self:start;padding:0;font-weight:600}
 
 .inst{display:grid;gap:12px}
-.inst .regel{display:flex;align-items:center;gap:10px}
-.inst .regel span{flex:1}
+.inst .regel{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.inst .regel > span{flex:1 1 170px;min-width:0}
 .inst .regel small{display:block;color:var(--zacht);font-size:14px}
 @media (prefers-reduced-motion: no-preference){ .balk span{transition:flex-grow .25s} }
 </style>
@@ -185,7 +186,7 @@ main,section{min-width:0}
       <div class="regel"><span>Wisselplekken<small>Aantal wisselseries per uitzending</small></span>
         <div class="stap"><button data-inst="plekken" data-d="-1" aria-label="Minder">−</button><output id="instPlekken"></output><button data-inst="plekken" data-d="1" aria-label="Meer">+</button></div></div>
       <div class="regel"><span>Maximaal prikkelniveau<small>Series daarboven komen niet in de uitzending</small></span>
-        <div class="stap"><button data-inst="maxPrikkel" data-d="-1" aria-label="Lager">−</button><output id="instMax" style="min-width:110px"></output><button data-inst="maxPrikkel" data-d="1" aria-label="Hoger">+</button></div></div>
+        <div class="stap"><button data-inst="maxPrikkel" data-d="-1" aria-label="Lager">−</button><output id="instMax" style="text-align:center;white-space:nowrap"></output><button data-inst="maxPrikkel" data-d="1" aria-label="Hoger">+</button></div></div>
       <label class="regel"><span>Cast-app-ID</span><input id="instApp" style="max-width:140px"></label>
       <button class="knop" id="resetAfl">Alle series opnieuw bij aflevering 1 laten beginnen</button>
     </div>

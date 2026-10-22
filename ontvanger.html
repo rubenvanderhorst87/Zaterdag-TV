@@ -18,6 +18,7 @@
   .scherm{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;
     justify-content:center;text-align:center;transition:opacity .6s}
   .uit{opacity:0;pointer-events:none}
+  .scherm:not(.uit){transition:none}   /* verschijnen meteen (dekt het eindscherm van YouTube af), verdwijnen met een fade */
 
   #welkom{background:var(--nacht);color:var(--wit)}
   #welkom h1{font-size:130px;line-height:1;color:var(--zon);margin:0;font-weight:800}
@@ -106,7 +107,7 @@ const wacht = ms => new Promise(res => setTimeout(res, ms));
 
 let speler = null, meter = null, klaarTeller = 0, apiKlaar = false, wachtStart = null, run = 0;
 let slots = [], si = 0, fase = "rust", gespeeld = 0, grens = 0, huidig = null, pauzeDoorOuder = false, nuTekst = "klaar";
-let lijsten = {}, offset = {}, prep = {}, prepRes = {}, prepGen = 0, meterWacht = null;
+let lijsten = {}, offset = {}, prep = {}, prepRes = {}, prepGen = 0, meterWacht = null, eersteVan = {};
 
 function later(fn, ms){ const r = run; return setTimeout(() => { if(r === run) fn(); }, ms); }
 function toon(id){ ["welkom","kaart","pauze","einde"].forEach(x => $(x).classList.toggle("uit", x !== id)); }
@@ -114,7 +115,16 @@ function meld(t){ $("status").textContent = t; }
 function stuur(obj){ try{ ctx.sendCustomMessage(NS, undefined, obj); }catch(e){} }
 function waarschuw(t){ meld(t); stuur({ type:"melding", tekst:t }); }
 function stuurNu(){ stuur({ type:"nu", fase, tekst:nuTekst }); }
-function foutTekst(code){ return code == 101 || code == 150 ? "inbedden niet toegestaan" : code == 100 ? "video bestaat niet meer" : code === "traag" ? "laadt niet" : "YouTube-fout " + code; }
+/* Geheugen op de Chromecast: lengte van afleveringen en video's die niet werken. Scheelt meten bij de volgende keer. */
+let geheugen = {};
+try{ geheugen = JSON.parse(localStorage.getItem("kindertv-geheugen")) || {}; }catch(e){ geheugen = {}; }
+function onthoud(v, waarde){
+  geheugen[v] = waarde;
+  const sleutels = Object.keys(geheugen);
+  if(sleutels.length > 3000) sleutels.slice(0, 500).forEach(k => delete geheugen[k]);
+  try{ localStorage.setItem("kindertv-geheugen", JSON.stringify(geheugen)); }catch(e){}
+}
+function foutTekst(code){ code = isNaN(code) ? code : +code; return code == 101 || code == 150 ? "inbedden niet toegestaan" : code == 100 ? "video bestaat niet meer" : code === "traag" ? "laadt niet" : "YouTube-fout " + code; }
 
 /* ---------- Berichten van de telefoon ---------- */
 ctx.addCustomMessageListener(NS, e => {
@@ -157,13 +167,21 @@ function meterStatus(e){
   const w = meterWacht; if(!w) return;
   if(w.soort === "lijst"){
     let pl = null; try{ pl = meter.getPlaylist(); }catch(x){}
-    if(pl && pl.length){ meterWacht = null; w.klaar(pl); }
+    /* YouTube geeft soms nog even de vorige playlist terug: die herkennen we aan de eerste video */
+    let url = ""; try{ url = meter.getVideoUrl() || ""; }catch(x){}
+    const andereLijst = url.includes("list=") && !url.includes("list=" + w.lijst);
+    if(pl && pl.length && !andereLijst && (!eersteVan[pl[0]] || eersteVan[pl[0]] === w.lijst)){
+      eersteVan[pl[0]] = w.lijst; meterWacht = null; w.klaar(pl);
+    }
   } else if(w.soort === "meet" && e.data === YT.PlayerState.PLAYING){
     meetDuur(w, 0);
   }
 }
+function huidigeId(p){ try{ return p.getVideoData().video_id; }catch(x){ return null; } }
 function meetDuur(w, keer){
   if(meterWacht !== w) return;
+  const id = huidigeId(meter);
+  if(id && id !== w.v){ if(keer < 10) setTimeout(() => meetDuur(w, keer + 1), 300); return; }   /* nog de vorige video */
   const d = meter.getDuration();
   if(!d && keer < 10){ setTimeout(() => meetDuur(w, keer + 1), 300); return; }
   meterWacht = null; try{ meter.stopVideo(); }catch(x){}
@@ -174,9 +192,9 @@ function meterFout(e){
   meterWacht = null; try{ meter.stopVideo(); }catch(x){}
   w.klaar(w.soort === "lijst" ? [] : { ok:false, code:e.data });
 }
-function meterVraag(soort, start, ms, bijTimeout){
+function meterVraag(soort, start, ms, bijTimeout, extra){
   return new Promise(res => {
-    const w = { soort, klaar:res };
+    const w = Object.assign({ soort, klaar:res }, extra);
     meterWacht = w;
     setTimeout(() => { if(meterWacht === w){ meterWacht = null; try{ meter.stopVideo(); }catch(x){} res(bijTimeout); } }, ms);
     start();
@@ -184,11 +202,20 @@ function meterVraag(soort, start, ms, bijTimeout){
   });
 }
 function haalLijst(l){
-  if(!lijsten[l]) lijsten[l] = meterVraag("lijst", () => meter.cuePlaylist({ list:l, listType:"playlist", index:0 }), 10000, []);
+  if(!lijsten[l]) lijsten[l] = meterVraag("lijst", () => { try{ meter.stopVideo(); }catch(x){} meter.cuePlaylist({ list:l, listType:"playlist", index:0 }); }, 10000, [], { lijst:l });
   return lijsten[l];
 }
-function meet(v){
-  return meterVraag("meet", () => { try{ meter.mute(); }catch(x){} meter.loadVideoById(v); }, 12000, { ok:false, code:"traag" });
+async function meet(v){
+  const bekend = geheugen[v];
+  if(typeof bekend === "number") return { ok:true, d:bekend };
+  if(typeof bekend === "string") return { ok:false, code:bekend };
+  const m = await meetEcht(v);
+  if(m.ok) onthoud(v, m.d);
+  else if([100, 101, 150].includes(m.code)) onthoud(v, String(m.code));
+  return m;
+}
+function meetEcht(v){
+  return meterVraag("meet", () => { try{ meter.mute(); }catch(x){} meter.loadVideoById(v); }, 12000, { ok:false, code:"traag" }, { v });
 }
 
 /* Bereidt een plek voor: zoekt de eerste speelbare aflevering en meet hem. Eén plek tegelijk, op volgorde. */
@@ -223,7 +250,8 @@ function vergeetVanaf(i){ prepGen++; Object.keys(prep).forEach(k => { if(+k >= i
 /* ---------- De uitzending ---------- */
 function begin(d){
   run++;
-  slots = d.slots || []; si = 0; gespeeld = 0; offset = {}; lijsten = {}; prep = {}; prepRes = {}; prepGen++; meterWacht = null;
+  slots = d.slots || []; si = 0; gespeeld = 0; offset = {}; lijsten = {}; prep = {};   /* eersteVan blijft bewaard: zo herkennen we ook een playlist van een vorige uitzending */
+   prepRes = {}; prepGen++; meterWacht = null;
   grens = ((d.doelMin || 60) + (d.spelingMin || 5)) * 60;
   try{ speler.stopVideo(); meter.stopVideo(); }catch(e){}
   const uur = new Date().getHours();
@@ -280,22 +308,34 @@ function spelerStatus(e){
   const S = YT.PlayerState;
   if(e.data === S.PLAYING) ondertitelsUit();
   if(fase === "startend" && e.data === S.PLAYING){
+    const id = huidigeId(speler);
+    if(id && huidig && id !== huidig.v) return;        /* seintje van een vorige video: negeren */
     fase = "video";
     later(() => { if(fase === "video" && !pauzeDoorOuder) toon(null); }, 1200);
-    const volgende = si + 1;
-    later(() => voorbereid(volgende), 4000);    /* volgende plek klaarzetten terwijl deze speelt */
+    /* Tijdens het kijken alleen de playlist van de volgende plek ophalen: dat is licht.
+       Meten (video laden) gebeurt pas tijdens de aankondiging, zodat de Chromecast nooit twee video's tegelijk verwerkt. */
+    const volgende = slots[si + 1];
+    if(volgende && !lijsten[volgende.lijst] && !meterWacht) later(() => { if(!meterWacht && !lijsten[volgende.lijst]) haalLijst(volgende.lijst); }, 5000);
     return;
   }
   if(fase === "video"){
     if(e.data === S.PLAYING){ pauzeDoorOuder = false; toon(null); }
     else if(e.data === S.PAUSED && pauzeDoorOuder){ toon("pauze"); }
-    else if(e.data === S.ENDED){ gespeeld += huidig ? huidig.d : 0; si++; speelSlot(); }
+    else if(e.data === S.ENDED){
+      const id = huidigeId(speler);
+      if(id && huidig && id !== huidig.v) return;
+      gespeeld += huidig ? huidig.d : 0;
+      try{ speler.stopVideo(); }catch(x){}
+      si++; speelSlot();
+    }
   }
 }
 function spelerFout(e){
   if(!["startend","video"].includes(fase)) return;
   const sl = slots[si];
   waarschuw(sl.naam + ": aflevering overgeslagen, " + foutTekst(e.data));
+  if(huidig && [100, 101, 150].includes(e.data)) onthoud(huidig.v, String(e.data));
+  try{ speler.stopVideo(); }catch(x){}
   offset[sl.lijst] = (offset[sl.lijst] || 0) + 1;
   vergeetVanaf(si);
   speelSlot();
