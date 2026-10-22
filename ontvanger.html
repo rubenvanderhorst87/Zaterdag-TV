@@ -88,7 +88,7 @@
     <circle cx="42" cy="45" r="3" fill="#16244F"/><circle cx="58" cy="45" r="3" fill="#16244F"/>
   </svg>
   <h2>Dat was het voor vandaag!</h2>
-  <p>Volgende week zijn er nieuwe afleveringen.</p>
+  <p>Volgende keer zijn er nieuwe afleveringen.</p>
 </section>
 
 <div id="status"></div>
@@ -182,7 +182,7 @@ function kaart(sl){
   $("kaart").style.background = sl.kleur;
   $("kKlein").textContent = { nieuw:"Straks", zelfde:"Nog een aflevering van", tussen:"Even tussendoor" }[sl.soort] || "";
   $("kNaam").textContent = sl.naam;
-  $("kDaarna").textContent = sl.soort === "nieuw" ? (sl.daarna ? "Daarna: " + sl.daarna : "Daarna: tot volgende week") : "";
+  $("kDaarna").textContent = sl.soort === "nieuw" ? (sl.daarna ? "Daarna: " + sl.daarna : "Daarna: tot de volgende keer") : "";
   $("kBeeld").classList.remove("zicht");
   const ms = KAART_MS[sl.soort] || 5000, klok = $("klok");
   klok.classList.remove("loopt"); void klok.getBBox();
