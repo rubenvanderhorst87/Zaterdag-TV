@@ -55,7 +55,18 @@ ol.gids li:last-child{border-bottom:0}
 .stip{width:16px;height:16px;border-radius:50%;flex:none}
 ol.gids .pijl{border:0;background:var(--veld);border-radius:8px;width:32px;height:32px;font-size:16px;font-weight:700;flex:none}
 ol.gids .pijl:disabled{opacity:.3}
-ol.gids li.tussen{color:var(--zacht);font-size:15px}
+ol.gids li{flex-wrap:wrap}
+ol.gids .nm{flex:1;min-width:0}
+ol.gids .aantal{border:1px solid var(--lijn);background:none;border-radius:8px;padding:0 6px;font-size:14px;margin-left:4px;color:var(--zacht)}
+ol.gids .klein{border:0;background:var(--veld);border-radius:8px;width:32px;height:32px;font-size:18px;font-weight:700;flex:none}
+ol.gids li.isTussen .nm{color:var(--zacht)}
+.picker{width:100%;background:var(--veld);border-radius:12px;padding:10px;margin-top:6px}
+.picker p{margin:0 0 8px;font-size:14px;color:var(--zacht)}
+.picker .chips{display:flex;flex-wrap:wrap;gap:6px}
+.picker .chips button{border:0;border-radius:999px;padding:5px 12px 5px 6px;background:var(--vlak);display:flex;align-items:center;gap:6px;font-size:15px;font-weight:600}
+.picker .chips .stip{width:14px;height:14px}
+.picker .annuleer{margin-top:8px;border:0;background:none;color:var(--zacht);padding:0}
+#eigenVolgorde{font-size:14px;color:var(--zacht);margin:-6px 0 10px}
 ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:nowrap}
 .label{font-size:13px;color:var(--zacht);border:1px solid var(--lijn);border-radius:999px;padding:0 8px}
 
@@ -86,7 +97,8 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
 .seg{display:flex;background:var(--veld);border-radius:10px;padding:3px}
 .seg button{border:0;background:none;border-radius:8px;padding:4px 8px;font-size:15px;font-weight:600;color:var(--zacht)}
 .seg button.aan{background:var(--nacht);color:#fff}
-.stap{display:flex;align-items:center;gap:4px;margin-left:auto}
+.stap{display:flex;align-items:center;gap:4px;margin-left:auto;flex:none}
+main,section{min-width:0}
 .stap button{width:36px;height:36px;border-radius:10px;border:0;background:var(--veld);font-size:20px;font-weight:700}
 .stap output{min-width:28px;text-align:center;font-weight:700}
 .rij.uit .stap,.rij.tussen .stap{visibility:hidden}
@@ -115,10 +127,12 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
     <h2 id="vandaagTitel">Deze zaterdag</h2>
     <div class="balkwrap"><div class="balk" id="balk"></div><div class="doel" id="doelstreep"></div></div>
     <div id="balkTekst"></div>
+    <div id="eigenVolgorde" hidden>Je hebt deze week zelf geschikt. Standaardvolgorde zet alles terug.</div>
     <ol class="gids" id="gids"></ol>
     <div class="knoppen" style="margin-bottom:12px">
+      <button class="knop" id="begin">+ Aan het begin</button>
       <button class="knop" id="hussel">Husselen</button>
-      <button class="knop" id="rustig">Rustig naar druk</button>
+      <button class="knop" id="rustig">Standaardvolgorde</button>
       <button class="knop" id="andereWissel">Andere wisselseries</button>
       <button class="knop" id="nieuwPlan" hidden>Nieuw plan voor vandaag</button>
     </div>
@@ -137,7 +151,7 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
 
   <section>
     <h2>Programma’s</h2>
-    <p class="uitleg">Kern komt elke week. Wissel rouleert per week. Tussen komt na elke aflevering terug, bijvoorbeeld een liedje. Tik op een naam om de playlist en de duur aan te passen.</p>
+    <p class="uitleg">Kern komt elke week. Wissel rouleert per week. Tussen is voor korte filmpjes zoals liedjes: die zet je zelf in het blok met de + bij een programma. Tik op een naam om de playlist en de duur aan te passen.</p>
     <div id="lijst"></div>
     <button class="knop" id="toevoegen" style="margin-top:10px">Serie toevoegen</button>
   </section>
@@ -212,34 +226,38 @@ function programmas(){
   }
   return lijst.map(s => ({ id:s.id, naam:s.naam, kleur:s.kleur, lijst:s.lijst, aantal:s.aantal, maxMin:s.maxMin, duur:s.duur, rol:s.rol }));
 }
-function bouwSlots(progs){
-  const tussen = S.lib.filter(s => s.rol === "tussendoor" && s.lijst);
-  const totaal = progs.reduce((t,p) => t + p.aantal, 0), teller = {};
-  const slots = []; let n = 0, ti = 0;
-  progs.forEach((p, pi) => {
-    for(let e = 0; e < p.aantal; e++){
-      slots.push({ id:p.id, naam:p.naam, kleur:p.kleur, lijst:p.lijst, maxMin:p.maxMin, duur:p.duur,
-        index:(S.ptr[p.id] || 0) + e, soort: e === 0 ? "nieuw" : "zelfde", teller:(e+1) + "/" + p.aantal,
-        daarna: progs[pi+1] ? progs[pi+1].naam : "" });
-      n++;
-      if(tussen.length && n < totaal){
-        const t = tussen[ti++ % tussen.length]; teller[t.id] = teller[t.id] || 0;
-        slots.push({ id:t.id, naam:t.naam, kleur:t.kleur, lijst:t.lijst, maxMin:t.maxMin, duur:t.duur,
-          index:(S.ptr[t.id] || 0) + teller[t.id], soort:"tussen", teller:"", daarna:"" });
-        teller[t.id]++;
-      }
+const serie = id => S.lib.find(x => x.id === id);
+let invoegNa = null;
+function entriesNu(){
+  if(S.week && S.week.week === weekNr())
+    return S.week.entries.filter(e => { const x = serie(e.id); return x && x.lijst && x.rol !== "uit"; });
+  return programmas().map(p => ({ id:p.id, aantal:p.aantal }));
+}
+function zetEntries(entries){ S.week = { week:weekNr(), entries }; invoegNa = null; bewaar(); teken(); }
+function bouwSlots(entries){
+  const teller = {}, slots = [];
+  entries.forEach((en, ei) => {
+    const s = serie(en.id); if(!s) return;
+    const volgende = entries.slice(ei + 1).map(x => serie(x.id)).find(x => x && x.rol !== "tussendoor");
+    for(let e = 0; e < en.aantal; e++){
+      teller[s.id] = teller[s.id] || 0;
+      slots.push({ id:s.id, naam:s.naam, kleur:s.kleur, lijst:s.lijst, maxMin:s.maxMin, duur:s.duur,
+        index:(S.ptr[s.id] || 0) + teller[s.id],
+        soort: e > 0 ? "zelfde" : s.rol === "tussendoor" ? "tussen" : "nieuw",
+        teller: en.aantal > 1 ? (e+1) + "/" + en.aantal : "", daarna: volgende ? volgende.naam : "" });
+      teller[s.id]++;
     }
   });
   return slots;
 }
-const gestartVandaag = () => !!(S.vandaag && S.vandaag.datum === vandaagStr() && S.vandaag.slots);
-function zetOrde(ids){ S.orde = { week:weekNr(), ids }; bewaar(); teken(); }
+const gestartVandaag = () => !!(S.vandaag && S.vandaag.datum === vandaagStr() && S.vandaag.slots && S.vandaag.rijen);
 
 /* ---------- Tekenen ---------- */
 function teken(){
   const vast = gestartVandaag();
-  const plan = vast ? S.vandaag.progs : programmas();
-  const slots = vast ? S.vandaag.slots : bouwSlots(plan);
+  const entries = vast ? null : entriesNu();
+  const rijen = vast ? S.vandaag.rijen : entries.map(e => { const x = serie(e.id); return { id:x.id, naam:x.naam, kleur:x.kleur, aantal:e.aantal, duur:x.duur, rol:x.rol }; });
+  const slots = vast ? S.vandaag.slots : bouwSlots(entries);
   const doel = S.inst.doel, grens = doel + S.inst.speling;
   const totaal = slots.reduce((t,p) => t + p.duur, 0);
   const schaal = Math.max(totaal, grens) * 1.08;
@@ -253,16 +271,19 @@ function teken(){
   else if(totaal < doel - 8) bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Er is nog ruimte voor zo’n ${doel - totaal} minuten.`;
   else bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Het blok zit vol.`;
 
-  const tus = {};
-  slots.filter(x => x.soort === "tussen").forEach(x => { tus[x.naam] = tus[x.naam] || { n:0, min:0, kleur:x.kleur }; tus[x.naam].n++; tus[x.naam].min += x.duur; });
-  $("gids").innerHTML = (plan.map((p, i) => `<li>
-    ${vast ? "" : `<button class="pijl" data-op="${i}" ${i === 0 ? "disabled" : ""} aria-label="Eerder">↑</button><button class="pijl" data-neer="${i}" ${i === plan.length - 1 ? "disabled" : ""} aria-label="Later">↓</button>`}
+  const kiesbaar = [...S.lib].filter(x => x.lijst && x.rol !== "uit").sort((a,b) => (a.rol === "tussendoor" ? 0 : 1) - (b.rol === "tussendoor" ? 0 : 1));
+  const picker = na => `<div class="picker"><p>${na < 0 ? "Aan het begin zetten:" : "Invoegen na " + esc(rijen[na].naam) + ":"}</p>
+    <div class="chips">${kiesbaar.map(x => `<button data-kies="${x.id}"><span class="stip" style="background:${x.kleur}"></span>${esc(x.naam)}</button>`).join("")}</div>
+    <button class="annuleer" data-annuleer="1">Annuleren</button></div>`;
+  $("gids").innerHTML = (invoegNa === -1 && !vast ? `<li>${picker(-1)}</li>` : "") + (rijen.map((p, i) => `<li class="${p.rol === "tussendoor" ? "isTussen" : ""}">
+    ${vast ? "" : `<button class="pijl" data-op="${i}" ${i === 0 ? "disabled" : ""} aria-label="Eerder">↑</button><button class="pijl" data-neer="${i}" ${i === rijen.length - 1 ? "disabled" : ""} aria-label="Later">↓</button>`}
     <span class="stip" style="background:${p.kleur}"></span>
-    <span>${esc(p.naam)}${p.aantal > 1 ? " ×" + p.aantal : ""}</span>
-    <span class="tijd">±${p.aantal * p.duur} min</span></li>`).join("") || `<li>Zet minstens één serie op kern of wissel.</li>`)
-    + Object.keys(tus).map(n => `<li class="tussen"><span class="stip" style="background:${tus[n].kleur}"></span>
-      <span>Tussendoor: ${esc(n)} ×${tus[n].n}</span><span class="tijd">±${tus[n].min} min</span></li>`).join("");
-
+    <span class="nm">${esc(p.naam)}${vast ? (p.aantal > 1 ? " ×" + p.aantal : "") : `<button class="aantal" data-aantal="${i}" aria-label="Aantal afleveringen">${p.aantal}×</button>`}</span>
+    <span class="tijd">±${p.aantal * p.duur} min</span>
+    ${vast ? "" : `<button class="klein" data-plus="${i}" aria-label="Iets invoegen na ${esc(p.naam)}">+</button><button class="klein" data-weg="${i}" aria-label="Weghalen">×</button>`}
+    ${invoegNa === i && !vast ? picker(i) : ""}</li>`).join("") || `<li>Zet minstens één serie op kern of wissel, of voeg iets toe.</li>`);
+  $("eigenVolgorde").hidden = vast || !(S.week && S.week.week === weekNr());
+  $("begin").hidden = vast;
   $("vandaagTitel").textContent = gestartVandaag() ? "Vandaag op tv" : "Deze zaterdag";
   $("andereWissel").hidden = vast; $("hussel").hidden = vast; $("rustig").hidden = vast;
   $("nieuwPlan").hidden = !gestartVandaag();
@@ -367,21 +388,26 @@ document.querySelector(".inst").addEventListener("click", e => {
 $("instApp").onchange = e => { S.inst.appId = e.target.value.trim(); bewaar(); location.reload(); };
 $("resetAfl").onclick = () => { if(confirm("Alle series weer bij aflevering 1 laten beginnen?")){ S.ptr = {}; S.vandaag = null; bewaar(); teken(); } };
 $("andereWissel").onclick = () => {
-  const w = weekNr(); S.extra = { week:w, n:(S.extra.week === w ? S.extra.n : 0) + 1 }; bewaar(); teken();
+  const w = weekNr(); S.extra = { week:w, n:(S.extra.week === w ? S.extra.n : 0) + 1 }; S.week = null; bewaar(); teken();
 };
 $("gids").addEventListener("click", e => {
-  const b = e.target.closest("button.pijl"); if(!b) return;
-  const ids = programmas().map(p => p.id);
-  const i = b.dataset.op !== undefined ? +b.dataset.op : +b.dataset.neer, j = b.dataset.op !== undefined ? i - 1 : i + 1;
-  [ids[i], ids[j]] = [ids[j], ids[i]];
-  zetOrde(ids);
+  const b = e.target.closest("button"); if(!b) return;
+  const en = entriesNu().map(x => ({ ...x })), d = b.dataset;
+  if(d.op !== undefined){ const i = +d.op; [en[i-1], en[i]] = [en[i], en[i-1]]; return zetEntries(en); }
+  if(d.neer !== undefined){ const i = +d.neer; [en[i+1], en[i]] = [en[i], en[i+1]]; return zetEntries(en); }
+  if(d.aantal !== undefined){ const i = +d.aantal; en[i].aantal = en[i].aantal >= 3 ? 1 : en[i].aantal + 1; return zetEntries(en); }
+  if(d.weg !== undefined){ en.splice(+d.weg, 1); return zetEntries(en); }
+  if(d.plus !== undefined){ invoegNa = invoegNa === +d.plus ? null : +d.plus; return teken(); }
+  if(d.annuleer){ invoegNa = null; return teken(); }
+  if(d.kies){ en.splice(invoegNa + 1, 0, { id:d.kies, aantal:1 }); return zetEntries(en); }
 });
+$("begin").onclick = () => { invoegNa = invoegNa === -1 ? null : -1; teken(); };
 $("hussel").onclick = () => {
-  const ids = programmas().map(p => p.id);
-  for(let i = ids.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
-  zetOrde(ids);
+  const en = entriesNu();
+  for(let i = en.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [en[i], en[j]] = [en[j], en[i]]; }
+  zetEntries(en);
 };
-$("rustig").onclick = () => { S.orde = null; bewaar(); teken(); };
+$("rustig").onclick = () => { S.week = null; S.orde = null; invoegNa = null; bewaar(); teken(); };
 $("nieuwPlan").onclick = () => { S.vandaag = null; bewaar(); teken(); };
 
 /* ---------- Casten ---------- */
@@ -417,14 +443,15 @@ window.__onGCastApiAvailable = ok => {
 
 $("start").onclick = () => {
   if(!gestartVandaag()){
-    const progs = programmas(), slots = bouwSlots(progs);
+    const entries = entriesNu(), slots = bouwSlots(entries);
+    const rijen = entries.map(e => { const x = serie(e.id); return { id:x.id, naam:x.naam, kleur:x.kleur, aantal:e.aantal, duur:x.duur, rol:x.rol }; });
     slots.forEach(x => { S.ptr[x.id] = Math.max(S.ptr[x.id] || 0, x.index + 1); });
-    S.vandaag = { datum:vandaagStr(), progs, slots };
+    S.vandaag = { datum:vandaagStr(), rijen, slots };
     bewaar();
   }
   const v = S.vandaag;
   stuur({ type:"start", doelMin:S.inst.doel, spelingMin:S.inst.speling,
-    gids: v.progs.map(p => ({ naam:p.naam, kleur:p.kleur, aantal:p.aantal })),
+    gids: v.rijen.filter(p => p.rol !== "tussendoor").map(p => ({ naam:p.naam, kleur:p.kleur, aantal:p.aantal })),
     slots: v.slots.map(x => ({ naam:x.naam, kleur:x.kleur, lijst:x.lijst, index:x.index, maxMin:x.maxMin, soort:x.soort, teller:x.teller, daarna:x.daarna })) });
   S.meldingen = { datum:vandaagStr(), lijst:[] }; bewaar();
   nu = { fase:"welkom", tekst:"welkom" };
