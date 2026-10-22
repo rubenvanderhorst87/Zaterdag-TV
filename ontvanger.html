@@ -102,10 +102,11 @@ const NS = "urn:x-cast:nl.zaterdagtv";
 const KAART_MS = { nieuw:11000, zelfde:5000, tussen:5000 };
 const ctx = cast.framework.CastReceiverContext.getInstance();
 const $ = id => document.getElementById(id);
+const wacht = ms => new Promise(res => setTimeout(res, ms));
 
 let speler = null, meter = null, klaarTeller = 0, apiKlaar = false, wachtStart = null, run = 0;
-let slots = [], si = 0, cache = {}, offset = {}, pogingen = 0, fase = "rust", huidigVideo = null;
-let gespeeld = 0, grens = 0, huidigDuur = 0, kaartKlaar = false, wachtLijst = null, pauzeDoorOuder = false, nuTekst = "klaar";
+let slots = [], si = 0, fase = "rust", gespeeld = 0, grens = 0, huidig = null, pauzeDoorOuder = false, nuTekst = "klaar";
+let lijsten = {}, offset = {}, prep = {}, prepRes = {}, prepGen = 0, meterWacht = null;
 
 function later(fn, ms){ const r = run; return setTimeout(() => { if(r === run) fn(); }, ms); }
 function toon(id){ ["welkom","kaart","pauze","einde"].forEach(x => $(x).classList.toggle("uit", x !== id)); }
@@ -113,6 +114,7 @@ function meld(t){ $("status").textContent = t; }
 function stuur(obj){ try{ ctx.sendCustomMessage(NS, undefined, obj); }catch(e){} }
 function waarschuw(t){ meld(t); stuur({ type:"melding", tekst:t }); }
 function stuurNu(){ stuur({ type:"nu", fase, tekst:nuTekst }); }
+function foutTekst(code){ return code == 101 || code == 150 ? "inbedden niet toegestaan" : code == 100 ? "video bestaat niet meer" : code === "traag" ? "laadt niet" : "YouTube-fout " + code; }
 
 /* ---------- Berichten van de telefoon ---------- */
 ctx.addCustomMessageListener(NS, e => {
@@ -130,7 +132,7 @@ opties.skipPlayersLoad = true;
 opties.maxInactivity = 3600;
 ctx.start(opties);
 
-/* ---------- YouTube: een hoofdspeler en een meetspeler ---------- */
+/* ---------- YouTube: hoofdspeler (beeld) en meetspeler (onzichtbaar) ---------- */
 const tag = document.createElement("script");
 tag.src = "https://www.youtube.com/iframe_api";
 document.head.appendChild(tag);
@@ -150,10 +152,78 @@ function ondertitelsUit(){
   }, ms));
 }
 
+/* ---------- Meetspeler: playlists ophalen en afleveringen meten, op de achtergrond ---------- */
+function meterStatus(e){
+  const w = meterWacht; if(!w) return;
+  if(w.soort === "lijst"){
+    let pl = null; try{ pl = meter.getPlaylist(); }catch(x){}
+    if(pl && pl.length){ meterWacht = null; w.klaar(pl); }
+  } else if(w.soort === "meet" && e.data === YT.PlayerState.PLAYING){
+    meetDuur(w, 0);
+  }
+}
+function meetDuur(w, keer){
+  if(meterWacht !== w) return;
+  const d = meter.getDuration();
+  if(!d && keer < 10){ setTimeout(() => meetDuur(w, keer + 1), 300); return; }
+  meterWacht = null; try{ meter.stopVideo(); }catch(x){}
+  w.klaar(d ? { ok:true, d } : { ok:false, code:"traag" });
+}
+function meterFout(e){
+  const w = meterWacht; if(!w) return;
+  meterWacht = null; try{ meter.stopVideo(); }catch(x){}
+  w.klaar(w.soort === "lijst" ? [] : { ok:false, code:e.data });
+}
+function meterVraag(soort, start, ms, bijTimeout){
+  return new Promise(res => {
+    const w = { soort, klaar:res };
+    meterWacht = w;
+    setTimeout(() => { if(meterWacht === w){ meterWacht = null; try{ meter.stopVideo(); }catch(x){} res(bijTimeout); } }, ms);
+    start();
+    if(soort === "lijst") [1500, 4000].forEach(t => setTimeout(() => { if(meterWacht === w) meterStatus({ data:-1 }); }, t));  /* voor als YouTube geen seintje geeft */
+  });
+}
+function haalLijst(l){
+  if(!lijsten[l]) lijsten[l] = meterVraag("lijst", () => meter.cuePlaylist({ list:l, listType:"playlist", index:0 }), 10000, []);
+  return lijsten[l];
+}
+function meet(v){
+  return meterVraag("meet", () => { try{ meter.mute(); }catch(x){} meter.loadVideoById(v); }, 12000, { ok:false, code:"traag" });
+}
+
+/* Bereidt een plek voor: zoekt de eerste speelbare aflevering en meet hem. Eén plek tegelijk, op volgorde. */
+function voorbereid(i){
+  if(i >= slots.length) return Promise.resolve(null);
+  if(prep[i]) return prep[i];
+  const gen = prepGen, r = run;
+  const vorige = i > 0 && prep[i-1] ? prep[i-1] : Promise.resolve();
+  prep[i] = vorige.then(async () => {
+    const sl = slots[i];
+    const ids = await haalLijst(sl.lijst);
+    if(gen !== prepGen || r !== run) return null;
+    if(!ids.length){
+      if(!lijsten[sl.lijst].gemeld){ lijsten[sl.lijst].gemeld = true; waarschuw(sl.naam + ": playlist laadt niet (link fout, verwijderd of privé)"); }
+      return prepRes[i] = null;
+    }
+    for(let poging = 0; poging < 9; poging++){
+      const v = ids[(sl.index + (offset[sl.lijst] || 0)) % ids.length];
+      const m = await meet(v);
+      if(gen !== prepGen || r !== run) return null;
+      if(m.ok && m.d <= sl.maxMin * 60){ new Image().src = beeldUrl(v); return prepRes[i] = { v, d:m.d }; }
+      waarschuw(sl.naam + ": aflevering overgeslagen, " + (m.ok ? "te lang (" + Math.round(m.d/60) + " min, maximaal " + sl.maxMin + ")" : foutTekst(m.code)));
+      offset[sl.lijst] = (offset[sl.lijst] || 0) + 1;
+    }
+    waarschuw(sl.naam + ": geen speelbare aflevering gevonden");
+    return prepRes[i] = null;
+  });
+  return prep[i];
+}
+function vergeetVanaf(i){ prepGen++; Object.keys(prep).forEach(k => { if(+k >= i){ delete prep[k]; delete prepRes[k]; } }); }
+
 /* ---------- De uitzending ---------- */
 function begin(d){
   run++;
-  slots = d.slots || []; si = 0; gespeeld = 0; cache = {}; offset = {};
+  slots = d.slots || []; si = 0; gespeeld = 0; offset = {}; lijsten = {}; prep = {}; prepRes = {}; prepGen++; meterWacht = null;
   grens = ((d.doelMin || 60) + (d.spelingMin || 5)) * 60;
   try{ speler.stopVideo(); meter.stopVideo(); }catch(e){}
   const uur = new Date().getHours();
@@ -167,122 +237,72 @@ function begin(d){
     $("gids").appendChild(c);
   });
   fase = "welkom"; nuTekst = "welkom"; toon("welkom"); stuurNu();
+  voorbereid(0);                      /* meten begint al tijdens het welkomstscherm */
   later(speelSlot, 8000);
 }
 
-function speelSlot(){
-  while(si < slots.length && cache[slots[si].lijst] && !cache[slots[si].lijst].length) si++; /* kapotte playlist: stil overslaan */
+async function speelSlot(){
+  const r = run;
+  while(si < slots.length && prepRes.hasOwnProperty(si) && prepRes[si] === null) si++;   /* bekend onspeelbaar: stil overslaan */
   if(si >= slots.length) return einde();
-  pogingen = 0;
-  kaart(slots[si]);
-  if(cache[slots[si].lijst]) peil(); else laadLijst(slots[si].lijst);
+  const i = si, sl = slots[i];
+  kaart(sl, prepRes[i]);
+  const [res] = await Promise.all([voorbereid(i), wacht(KAART_MS[sl.soort] || 5000)]);
+  if(r !== run || i !== si) return;
+  if(!res){ si++; return speelSlot(); }
+  if(gespeeld > 0 && gespeeld + res.d > grens) return einde();
+  huidig = res; fase = "startend"; pauzeDoorOuder = false;
+  try{ speler.unMute(); speler.setVolume(100); }catch(e){}
+  speler.loadVideoById(res.v);
+  later(() => { if(fase === "startend" && si === i){ fase = "video"; toon(null); } }, 10000);
 }
-function volgendSlot(){ si++; speelSlot(); }
 
-function kaart(sl){
-  fase = "kaart"; kaartKlaar = false;
+function kaart(sl, res){
+  fase = "kaart";
   $("kaart").style.background = sl.kleur;
   $("kKlein").textContent = { nieuw:"Straks", zelfde:"Nog een aflevering van", tussen:"Even tussendoor" }[sl.soort] || "";
   $("kNaam").textContent = sl.naam;
   $("kDaarna").textContent = sl.soort === "nieuw" ? (sl.daarna ? "Daarna: " + sl.daarna : "Daarna: tot de volgende keer") : "";
-  $("kBeeld").classList.remove("zicht");
+  const img = $("kBeeld");
+  img.classList.remove("zicht"); img.removeAttribute("src");
+  const zet = v => { if(slots[si] !== sl) return; img.onload = () => img.classList.add("zicht"); img.src = beeldUrl(v); };
+  if(res) zet(res.v); else voorbereid(si).then(x => { if(x) zet(x.v); });
   const ms = KAART_MS[sl.soort] || 5000, klok = $("klok");
   klok.classList.remove("loopt"); void klok.getBBox();
   klok.querySelector(".ring").style.animationDuration = ms + "ms";
   klok.classList.add("loopt");
   toon("kaart");
   nuTekst = sl.naam + (sl.teller ? " (" + sl.teller + ")" : ""); stuurNu();
-  later(() => { kaartKlaar = true; probeerStart(); }, ms);
 }
-function toonBeeld(v){
-  const img = $("kBeeld");
-  img.classList.remove("zicht");
-  img.onload = () => img.classList.add("zicht");
-  img.src = "https://i.ytimg.com/vi/" + v + "/hqdefault.jpg";
-}
+const beeldUrl = v => "https://i.ytimg.com/vi/" + v + "/hqdefault.jpg";
 
-function leesLijst(){ try{ const pl = meter.getPlaylist(); return pl && pl.length ? pl : null; }catch(e){ return null; } }
-function laadLijst(l){
-  wachtLijst = l;
-  meter.cuePlaylist({ list:l, listType:"playlist", index:0 });
-  later(() => {
-    if(wachtLijst !== l) return;
-    const pl = leesLijst();
-    if(pl) return lijstKlaar(pl);
-    wachtLijst = null; cache[l] = [];
-    waarschuw(slots[si].naam + ": playlist laadt niet (link fout, verwijderd of privé)");
-    volgendSlot();
-  }, 10000);
-}
-function lijstKlaar(pl){ const l = wachtLijst; wachtLijst = null; cache[l] = pl; peil(); }
-
-/* De meetspeler laadt de aflevering stil en meet de lengte */
-function peil(){
-  const sl = slots[si], ids = cache[sl.lijst];
-  if(!ids || !ids.length) return volgendSlot();
-  if(pogingen > 8){ waarschuw(sl.naam + ": geen speelbare aflevering gevonden, door naar de volgende"); return volgendSlot(); }
-  fase = "peilen";
-  const v = ids[(sl.index + (offset[sl.lijst] || 0)) % ids.length];
-  huidigVideo = v; toonBeeld(v);
-  try{ meter.mute(); }catch(e){}
-  meter.loadVideoById(v);
-  const p = pogingen;
-  later(() => { if(fase === "peilen" && pogingen === p){ waarschuw(sl.naam + ": aflevering laadt niet, overgeslagen"); slaOver(); } }, 15000);
-}
-function slaOver(){ const sl = slots[si]; offset[sl.lijst] = (offset[sl.lijst] || 0) + 1; pogingen++; peil(); }
-
-function peilDuur(){
-  if(fase !== "peilen") return;
-  const d = meter.getDuration();
-  if(!d){ later(peilDuur, 400); return; }
-  meter.stopVideo();
-  const sl = slots[si];
-  if(d > sl.maxMin * 60){ waarschuw(sl.naam + ": aflevering overgeslagen, te lang (" + Math.round(d/60) + " min, maximaal " + sl.maxMin + ")"); return slaOver(); }
-  if(gespeeld > 0 && gespeeld + d > grens) return einde();
-  huidigDuur = d; fase = "gereed"; probeerStart();
-}
-
-/* De hoofdspeler start de aflevering schoon, zonder eerdere pauze */
-function probeerStart(){
-  if(fase !== "gereed" || !kaartKlaar) return;
-  fase = "startend"; pauzeDoorOuder = false;
-  try{ speler.unMute(); speler.setVolume(100); }catch(e){}
-  speler.loadVideoById(huidigVideo);
-  later(() => { if(fase === "startend"){ fase = "video"; toon(null); } }, 10000);
-}
-
-function meterStatus(e){
-  if(wachtLijst){ const pl = leesLijst(); if(pl) lijstKlaar(pl); return; }
-  if(fase === "peilen" && e.data === YT.PlayerState.PLAYING) peilDuur();
-}
-function meterFout(e){
-  if(wachtLijst || !["peilen","gereed"].includes(fase)) return;
-  meldFout(e.data); slaOver();
-}
 function spelerStatus(e){
   const S = YT.PlayerState;
   if(e.data === S.PLAYING) ondertitelsUit();
   if(fase === "startend" && e.data === S.PLAYING){
     fase = "video";
     later(() => { if(fase === "video" && !pauzeDoorOuder) toon(null); }, 1200);
+    const volgende = si + 1;
+    later(() => voorbereid(volgende), 4000);    /* volgende plek klaarzetten terwijl deze speelt */
     return;
   }
   if(fase === "video"){
     if(e.data === S.PLAYING){ pauzeDoorOuder = false; toon(null); }
     else if(e.data === S.PAUSED && pauzeDoorOuder){ toon("pauze"); }
-    else if(e.data === S.ENDED){ gespeeld += huidigDuur; volgendSlot(); }
+    else if(e.data === S.ENDED){ gespeeld += huidig ? huidig.d : 0; si++; speelSlot(); }
   }
 }
 function spelerFout(e){
   if(!["startend","video"].includes(fase)) return;
-  meldFout(e.data); kaart(slots[si]); slaOver();
-}
-function meldFout(code){
-  waarschuw(slots[si].naam + ": " + (code == 101 || code == 150 ? "inbedden niet toegestaan" : code == 100 ? "video bestaat niet meer" : "YouTube-fout " + code) + ", overgeslagen");
+  const sl = slots[si];
+  waarschuw(sl.naam + ": aflevering overgeslagen, " + foutTekst(e.data));
+  offset[sl.lijst] = (offset[sl.lijst] || 0) + 1;
+  vergeetVanaf(si);
+  speelSlot();
 }
 
 function einde(){
-  run++;
+  run++; prepGen++; meterWacht = null;
   fase = "einde"; nuTekst = "afgelopen";
   try{ speler.stopVideo(); meter.stopVideo(); }catch(e){}
   toon("einde"); stuurNu();
