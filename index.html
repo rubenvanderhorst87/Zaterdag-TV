@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#16244F">
-<title>Zaterdagochtend-tv</title>
+<title>KinderTV</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -52,6 +52,9 @@ ol.gids{list-style:none;margin:0 0 14px;padding:0}
 ol.gids li{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--lijn)}
 ol.gids li:last-child{border-bottom:0}
 .stip{width:16px;height:16px;border-radius:50%;flex:none}
+ol.gids .pijl{border:0;background:var(--veld);border-radius:8px;width:32px;height:32px;font-size:16px;font-weight:700;flex:none}
+ol.gids .pijl:disabled{opacity:.3}
+ol.gids li.tussen{color:var(--zacht);font-size:15px}
 ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:nowrap}
 .label{font-size:13px;color:var(--zacht);border:1px solid var(--lijn);border-radius:999px;padding:0 8px}
 
@@ -63,6 +66,11 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
 #bezig .nu{font-size:20px;font-weight:700;margin-bottom:10px}
 #bezig .knop{background:rgba(255,255,255,.14);color:#fff;flex:1}
 #melding{font-size:14px;color:var(--zacht);margin-top:8px;min-height:1em}
+#meldingen{margin-top:12px;border-top:1px solid var(--lijn);padding-top:10px}
+#meldingen h3{margin:0 0 6px;font-size:17px}
+#meldingen ul{list-style:none;margin:0;padding:0;font-size:15px}
+#meldingen li{padding:5px 0 5px 12px;border-left:3px solid var(--oranje);margin-bottom:6px}
+#meldingen time{color:var(--zacht);margin-right:6px}
 
 /* Programmalijst */
 .rij{border-bottom:1px solid var(--lijn);padding:10px 0}
@@ -74,12 +82,12 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
 .rij.uit .naam{opacity:.5}
 .rij-onder{display:flex;align-items:center;gap:10px;margin-top:8px;padding-left:26px}
 .seg{display:flex;background:var(--veld);border-radius:10px;padding:3px}
-.seg button{border:0;background:none;border-radius:8px;padding:4px 10px;font-size:15px;font-weight:600;color:var(--zacht)}
+.seg button{border:0;background:none;border-radius:8px;padding:4px 8px;font-size:15px;font-weight:600;color:var(--zacht)}
 .seg button.aan{background:var(--nacht);color:#fff}
 .stap{display:flex;align-items:center;gap:4px;margin-left:auto}
 .stap button{width:36px;height:36px;border-radius:10px;border:0;background:var(--veld);font-size:20px;font-weight:700}
 .stap output{min-width:28px;text-align:center;font-weight:700}
-.rij.uit .stap{visibility:hidden}
+.rij.uit .stap,.rij.tussen .stap{visibility:hidden}
 .details{padding:10px 0 4px 26px;display:grid;gap:10px}
 .details label{display:grid;gap:3px;font-size:14px;color:var(--zacht)}
 .details input,.details select,.inst input{border:1px solid var(--lijn);background:var(--veld);border-radius:10px;padding:8px 10px;width:100%}
@@ -96,7 +104,7 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
 </head>
 <body>
 <header>
-  <h1>Zaterdagochtend-tv<small id="verbinding">Niet verbonden met de tv</small></h1>
+  <h1>KinderTV<small id="verbinding">Niet verbonden met de tv</small></h1>
   <google-cast-launcher aria-label="Verbind met de tv"></google-cast-launcher>
 </header>
 
@@ -107,6 +115,8 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
     <div id="balkTekst"></div>
     <ol class="gids" id="gids"></ol>
     <div class="knoppen" style="margin-bottom:12px">
+      <button class="knop" id="hussel">Husselen</button>
+      <button class="knop" id="rustig">Rustig naar druk</button>
       <button class="knop" id="andereWissel">Andere wisselseries</button>
       <button class="knop" id="nieuwPlan" hidden>Nieuw plan voor vandaag</button>
     </div>
@@ -120,11 +130,12 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
       </div>
     </div>
     <div id="melding"></div>
+    <div id="meldingen" hidden><h3>Overgeslagen vandaag</h3><ul id="meldLijst"></ul></div>
   </section>
 
   <section>
     <h2>Programma’s</h2>
-    <p class="uitleg">Kern komt elke week. Wissel rouleert per week. Tik op een naam om de playlist en de duur aan te passen.</p>
+    <p class="uitleg">Kern komt elke week. Wissel rouleert per week. Tussen komt na elke aflevering terug, bijvoorbeeld een liedje. Tik op een naam om de playlist en de duur aan te passen.</p>
     <div id="lijst"></div>
     <button class="knop" id="toevoegen" style="margin-top:10px">Serie toevoegen</button>
   </section>
@@ -182,31 +193,56 @@ const weekNr = () => Math.floor((Date.now() - EPOCH.getTime()) / (7*864e5));
 let open = null, nu = null;
 
 /* ---------- Het plan van deze week ---------- */
-function maakPlan(){
+function programmas(){
   const kern = S.lib.filter(s => s.rol === "kern" && s.lijst);
   const wissel = S.lib.filter(s => s.rol === "wissel" && s.lijst);
   const w = weekNr();
   const extra = S.extra.week === w ? S.extra.n : 0;
   const n = Math.min(S.inst.plekken, wissel.length);
   const keuze = [];
-  for(let i = 0; i < n; i++) keuze.push(wissel[(w*n + extra + i) % wissel.length]);
+  for(let i = 0; i < n; i++){ const s = wissel[(w*n + extra + i) % wissel.length]; if(!keuze.includes(s)) keuze.push(s); }
   const rang = s => S.lib.indexOf(s);
-  return kern.concat(keuze)
-    .sort((a,b) => a.prikkel - b.prikkel || (a.rol === "kern" ? 0 : 1) - (b.rol === "kern" ? 0 : 1) || rang(a) - rang(b))
-    .map(s => ({ id:s.id, naam:s.naam, kleur:s.kleur, lijst:s.lijst, aantal:s.aantal, maxMin:s.maxMin, duur:s.duur, rol:s.rol, start:S.ptr[s.id] || 0 }));
+  const lijst = kern.concat(keuze)
+    .sort((a,b) => a.prikkel - b.prikkel || (a.rol === "kern" ? 0 : 1) - (b.rol === "kern" ? 0 : 1) || rang(a) - rang(b));
+  if(S.orde && S.orde.week === w){
+    const pos = id => { const i = S.orde.ids.indexOf(id); return i < 0 ? 999 : i; };
+    lijst.sort((a,b) => pos(a.id) - pos(b.id));
+  }
+  return lijst.map(s => ({ id:s.id, naam:s.naam, kleur:s.kleur, lijst:s.lijst, aantal:s.aantal, maxMin:s.maxMin, duur:s.duur, rol:s.rol }));
 }
-const gestartVandaag = () => S.vandaag && S.vandaag.datum === vandaagStr();
+function bouwSlots(progs){
+  const tussen = S.lib.filter(s => s.rol === "tussendoor" && s.lijst);
+  const totaal = progs.reduce((t,p) => t + p.aantal, 0), teller = {};
+  const slots = []; let n = 0, ti = 0;
+  progs.forEach((p, pi) => {
+    for(let e = 0; e < p.aantal; e++){
+      slots.push({ id:p.id, naam:p.naam, kleur:p.kleur, lijst:p.lijst, maxMin:p.maxMin, duur:p.duur,
+        index:(S.ptr[p.id] || 0) + e, soort: e === 0 ? "nieuw" : "zelfde", teller:(e+1) + "/" + p.aantal,
+        daarna: progs[pi+1] ? progs[pi+1].naam : "" });
+      n++;
+      if(tussen.length && n < totaal){
+        const t = tussen[ti++ % tussen.length]; teller[t.id] = teller[t.id] || 0;
+        slots.push({ id:t.id, naam:t.naam, kleur:t.kleur, lijst:t.lijst, maxMin:t.maxMin, duur:t.duur,
+          index:(S.ptr[t.id] || 0) + teller[t.id], soort:"tussen", teller:"", daarna:"" });
+        teller[t.id]++;
+      }
+    }
+  });
+  return slots;
+}
+const gestartVandaag = () => !!(S.vandaag && S.vandaag.datum === vandaagStr() && S.vandaag.slots);
+function zetOrde(ids){ S.orde = { week:weekNr(), ids }; bewaar(); teken(); }
 
 /* ---------- Tekenen ---------- */
 function teken(){
-  const plan = gestartVandaag() ? S.vandaag.plan : maakPlan();
+  const vast = gestartVandaag();
+  const plan = vast ? S.vandaag.progs : programmas();
+  const slots = vast ? S.vandaag.slots : bouwSlots(plan);
   const doel = S.inst.doel, grens = doel + S.inst.speling;
-  const totaal = plan.reduce((t,p) => t + p.aantal * p.duur, 0);
+  const totaal = slots.reduce((t,p) => t + p.duur, 0);
   const schaal = Math.max(totaal, grens) * 1.08;
 
-  $("balk").innerHTML = plan.map(p =>
-    Array.from({length:p.aantal}, () => `<span style="flex-grow:${p.duur};background:${p.kleur}"></span>`).join("")
-  ).join("") + `<span style="flex-grow:${Math.max(schaal - totaal, 0)};background:transparent;border:0"></span>`;
+  $("balk").innerHTML = slots.map(p => `<span style="flex-grow:${p.duur};background:${p.kleur}"></span>`).join("") + `<span style="flex-grow:${Math.max(schaal - totaal, 0)};background:transparent;border:0"></span>`;
   $("doelstreep").style.left = (doel / schaal * 100) + "%";
 
   const bt = $("balkTekst");
@@ -215,16 +251,22 @@ function teken(){
   else if(totaal < doel - 8) bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Er is nog ruimte voor zo’n ${doel - totaal} minuten.`;
   else bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Het blok zit vol.`;
 
-  $("gids").innerHTML = plan.map(p => `<li><span class="stip" style="background:${p.kleur}"></span>
+  const tus = {};
+  slots.filter(x => x.soort === "tussen").forEach(x => { tus[x.naam] = tus[x.naam] || { n:0, min:0, kleur:x.kleur }; tus[x.naam].n++; tus[x.naam].min += x.duur; });
+  $("gids").innerHTML = (plan.map((p, i) => `<li>
+    ${vast ? "" : `<button class="pijl" data-op="${i}" ${i === 0 ? "disabled" : ""} aria-label="Eerder">↑</button><button class="pijl" data-neer="${i}" ${i === plan.length - 1 ? "disabled" : ""} aria-label="Later">↓</button>`}
+    <span class="stip" style="background:${p.kleur}"></span>
     <span>${esc(p.naam)}${p.aantal > 1 ? " ×" + p.aantal : ""}</span>
-    <span class="label">${p.rol === "kern" ? "kern" : "wissel"}</span>
-    <span class="tijd">±${p.aantal * p.duur} min</span></li>`).join("") || `<li>Zet minstens één serie op kern of wissel.</li>`;
+    <span class="tijd">±${p.aantal * p.duur} min</span></li>`).join("") || `<li>Zet minstens één serie op kern of wissel.</li>`)
+    + Object.keys(tus).map(n => `<li class="tussen"><span class="stip" style="background:${tus[n].kleur}"></span>
+      <span>Tussendoor: ${esc(n)} ×${tus[n].n}</span><span class="tijd">±${tus[n].min} min</span></li>`).join("");
 
   $("vandaagTitel").textContent = gestartVandaag() ? "Vandaag op tv" : "Deze zaterdag";
-  $("andereWissel").hidden = gestartVandaag();
+  $("andereWissel").hidden = vast; $("hussel").hidden = vast; $("rustig").hidden = vast;
   $("nieuwPlan").hidden = !gestartVandaag();
 
   tekenBediening();
+  tekenMeldingen();
   tekenLijst();
   $("instDoel").textContent = S.inst.doel + " min";
   $("instSpeling").textContent = S.inst.speling + " min";
@@ -243,12 +285,25 @@ function tekenBediening(){
   if(loopt) $("nuTekst").textContent = "Nu op tv: " + nu.tekst;
 }
 
+function voegMeldingToe(t){
+  const d = new Date(), tijd = d.getHours() + ":" + String(d.getMinutes()).padStart(2,"0");
+  if(!S.meldingen || S.meldingen.datum !== vandaagStr()) S.meldingen = { datum:vandaagStr(), lijst:[] };
+  S.meldingen.lijst.unshift({ tijd, tekst:t });
+  S.meldingen.lijst = S.meldingen.lijst.slice(0, 20);
+  bewaar(); tekenMeldingen();
+}
+function tekenMeldingen(){
+  const m = S.meldingen && S.meldingen.datum === vandaagStr() ? S.meldingen.lijst : [];
+  $("meldingen").hidden = !m.length;
+  $("meldLijst").innerHTML = m.map(x => `<li><time>${x.tijd}</time>${esc(x.tekst)}</li>`).join("");
+}
+
 function tekenLijst(){
   const volgorde = [...S.lib].sort((a,b) => a.prikkel - b.prikkel || S.lib.indexOf(a) - S.lib.indexOf(b));
   $("lijst").innerHTML = volgorde.map(s => {
     const i = S.lib.indexOf(s);
     const geenLink = !s.lijst;
-    return `<div class="rij ${s.rol === "uit" ? "uit" : ""}">
+    return `<div class="rij ${s.rol === "uit" ? "uit" : s.rol === "tussendoor" ? "tussen" : ""}">
       <div class="rij-boven">
         <span class="stip" style="background:${s.kleur}"></span>
         <button class="naam" data-open="${i}" aria-expanded="${open === s.id}">
@@ -258,7 +313,7 @@ function tekenLijst(){
       </div>
       <div class="rij-onder">
         <div class="seg" role="group" aria-label="Rol van ${esc(s.naam)}">
-          ${["kern","wissel","uit"].map(r => `<button data-rol="${r}" data-i="${i}" class="${s.rol === r ? "aan" : ""}">${r[0].toUpperCase() + r.slice(1)}</button>`).join("")}
+          ${[["kern","Kern"],["wissel","Wissel"],["tussendoor","Tussen"],["uit","Uit"]].map(([r,t]) => `<button data-rol="${r}" data-i="${i}" class="${s.rol === r ? "aan" : ""}">${t}</button>`).join("")}
         </div>
         <div class="stap"><button data-afl="-1" data-i="${i}" aria-label="Minder afleveringen">−</button>
           <output>${s.aantal}×</output><button data-afl="1" data-i="${i}" aria-label="Meer afleveringen">+</button></div>
@@ -312,6 +367,19 @@ $("resetAfl").onclick = () => { if(confirm("Alle series weer bij aflevering 1 la
 $("andereWissel").onclick = () => {
   const w = weekNr(); S.extra = { week:w, n:(S.extra.week === w ? S.extra.n : 0) + 1 }; bewaar(); teken();
 };
+$("gids").addEventListener("click", e => {
+  const b = e.target.closest("button.pijl"); if(!b) return;
+  const ids = programmas().map(p => p.id);
+  const i = b.dataset.op !== undefined ? +b.dataset.op : +b.dataset.neer, j = b.dataset.op !== undefined ? i - 1 : i + 1;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  zetOrde(ids);
+});
+$("hussel").onclick = () => {
+  const ids = programmas().map(p => p.id);
+  for(let i = ids.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+  zetOrde(ids);
+};
+$("rustig").onclick = () => { S.orde = null; bewaar(); teken(); };
 $("nieuwPlan").onclick = () => { S.vandaag = null; bewaar(); teken(); };
 
 /* ---------- Casten ---------- */
@@ -331,7 +399,10 @@ window.__onGCastApiAvailable = ok => {
     const s = ctx.getCurrentSession();
     if(s && (e.sessionState === "SESSION_STARTED" || e.sessionState === "SESSION_RESUMED")){
       s.addMessageListener(NS, (ns, bericht) => {
-        try{ const d = JSON.parse(bericht); if(d.type === "nu"){ nu = d; tekenBediening(); } }catch(x){}
+        try{ const d = JSON.parse(bericht);
+          if(d.type === "nu"){ nu = d; tekenBediening(); }
+          if(d.type === "melding"){ voegMeldingToe(d.tekst); }
+        }catch(x){}
       });
       stuur({ type:"status" });
       $("melding").textContent = "";
@@ -343,16 +414,17 @@ window.__onGCastApiAvailable = ok => {
 };
 
 $("start").onclick = () => {
-  let plan;
-  if(gestartVandaag()) plan = S.vandaag.plan;
-  else {
-    plan = maakPlan();
-    plan.forEach(p => { S.ptr[p.id] = (S.ptr[p.id] || 0) + p.aantal; });
-    S.vandaag = { datum:vandaagStr(), plan };
+  if(!gestartVandaag()){
+    const progs = programmas(), slots = bouwSlots(progs);
+    slots.forEach(x => { S.ptr[x.id] = Math.max(S.ptr[x.id] || 0, x.index + 1); });
+    S.vandaag = { datum:vandaagStr(), progs, slots };
     bewaar();
   }
+  const v = S.vandaag;
   stuur({ type:"start", doelMin:S.inst.doel, spelingMin:S.inst.speling,
-    plan: plan.map(p => ({ naam:p.naam, kleur:p.kleur, lijst:p.lijst, start:p.start, aantal:p.aantal, maxMin:p.maxMin })) });
+    gids: v.progs.map(p => ({ naam:p.naam, kleur:p.kleur, aantal:p.aantal })),
+    slots: v.slots.map(x => ({ naam:x.naam, kleur:x.kleur, lijst:x.lijst, index:x.index, maxMin:x.maxMin, soort:x.soort, teller:x.teller, daarna:x.daarna })) });
+  S.meldingen = { datum:vandaagStr(), lijst:[] }; bewaar();
   nu = { fase:"welkom", tekst:"welkom" };
   teken();
 };
