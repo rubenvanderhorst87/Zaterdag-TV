@@ -61,7 +61,9 @@ ol.gids .acties{display:flex;align-items:center;gap:6px;margin-top:6px;padding-l
 ol.gids .acties .ruimte{flex:1}
 ol.gids .erna{border:0;background:var(--veld);border-radius:8px;height:32px;padding:0 10px;font-size:15px;font-weight:600;flex:none}
 ol.gids .nm{flex:1;min-width:0}
-ol.gids .aantal{border:1px solid var(--lijn);background:none;border-radius:8px;height:32px;padding:0 10px;font-size:15px;font-weight:600}
+ol.gids .teller{display:flex;align-items:center;gap:2px;margin-left:6px}
+ol.gids .aantal{min-width:30px;text-align:center;font-weight:700;font-size:15px}
+ol.gids .klein:disabled{opacity:.3}
 ol.gids .klein{border:0;background:var(--veld);border-radius:8px;width:32px;height:32px;font-size:18px;font-weight:700;flex:none}
 ol.gids li.isTussen .nm{color:var(--zacht)}
 .picker{width:100%;background:var(--veld);border-radius:12px;padding:10px;margin-top:6px}
@@ -286,7 +288,7 @@ function teken(){
     ${vast ? "" : `<div class="acties">
       <button class="pijl" data-op="${i}" ${i === 0 ? "disabled" : ""} aria-label="Eerder">↑</button>
       <button class="pijl" data-neer="${i}" ${i === rijen.length - 1 ? "disabled" : ""} aria-label="Later">↓</button>
-      <button class="aantal" data-aantal="${i}" aria-label="Aantal afleveringen">${p.aantal}×</button>
+      <span class="teller"><button class="klein" data-minder="${i}" ${p.aantal <= 1 ? "disabled" : ""} aria-label="Minder afleveringen">−</button><span class="aantal">${p.aantal}×</span><button class="klein" data-meer="${i}" ${p.aantal >= 4 ? "disabled" : ""} aria-label="Meer afleveringen">+</button></span>
       <span class="ruimte"></span>
       <button class="erna" data-plus="${i}" aria-expanded="${invoegNa === i}">+ erna</button>
       <button class="klein" data-weg="${i}" aria-label="Weghalen">×</button></div>`}
@@ -404,7 +406,8 @@ $("gids").addEventListener("click", e => {
   const en = entriesNu().map(x => ({ ...x })), d = b.dataset;
   if(d.op !== undefined){ const i = +d.op; [en[i-1], en[i]] = [en[i], en[i-1]]; return zetEntries(en); }
   if(d.neer !== undefined){ const i = +d.neer; [en[i+1], en[i]] = [en[i], en[i+1]]; return zetEntries(en); }
-  if(d.aantal !== undefined){ const i = +d.aantal; en[i].aantal = en[i].aantal >= 3 ? 1 : en[i].aantal + 1; return zetEntries(en); }
+  if(d.minder !== undefined){ const i = +d.minder; en[i].aantal = Math.max(1, en[i].aantal - 1); return zetEntries(en); }
+  if(d.meer !== undefined){ const i = +d.meer; en[i].aantal = Math.min(4, en[i].aantal + 1); return zetEntries(en); }
   if(d.weg !== undefined){ en.splice(+d.weg, 1); return zetEntries(en); }
   if(d.plus !== undefined){ invoegNa = invoegNa === +d.plus ? null : +d.plus; return teken(); }
   if(d.annuleer){ invoegNa = null; return teken(); }
