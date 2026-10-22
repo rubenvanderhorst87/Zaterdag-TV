@@ -10,8 +10,11 @@
   :root{--nacht:#16244F;--zon:#FFC93C;--wit:#F3F6FF}
   html,body{margin:0;height:100%;background:#000;overflow:hidden;
     font-family:"Baloo 2",ui-rounded,"Arial Rounded MT Bold",sans-serif}
-  #spelerdoos{position:absolute;inset:0}
-  #spelerdoos iframe{width:100%;height:100%;border:0}
+  /* Het speelvlak is hoger dan het scherm: de titelbalk en de knoppenbalk van YouTube vallen buiten beeld */
+  #spelerdoos{position:absolute;left:0;right:0;top:-130px;bottom:-130px;z-index:2;background:#000}
+  /* Tweede, onzichtbare speler die afleveringen vooraf meet */
+  #meterdoos{position:absolute;left:0;top:0;width:320px;height:180px;z-index:1}
+  #spelerdoos iframe,#meterdoos iframe{width:100%;height:100%;border:0}
   .scherm{position:absolute;inset:0;z-index:5;display:flex;flex-direction:column;align-items:center;
     justify-content:center;text-align:center;transition:opacity .6s}
   .uit{opacity:0;pointer-events:none}
@@ -49,6 +52,7 @@
 </style>
 </head>
 <body>
+<div id="meterdoos"><div id="meter"></div></div>
 <div id="spelerdoos"><div id="speler"></div></div>
 
 <section id="welkom" class="scherm">
@@ -99,8 +103,8 @@ const KAART_MS = { nieuw:11000, zelfde:5000, tussen:5000 };
 const ctx = cast.framework.CastReceiverContext.getInstance();
 const $ = id => document.getElementById(id);
 
-let speler = null, apiKlaar = false, wachtStart = null, run = 0;
-let slots = [], si = 0, cache = {}, offset = {}, pogingen = 0, fase = "rust";
+let speler = null, meter = null, klaarTeller = 0, apiKlaar = false, wachtStart = null, run = 0;
+let slots = [], si = 0, cache = {}, offset = {}, pogingen = 0, fase = "rust", huidigVideo = null;
 let gespeeld = 0, grens = 0, huidigDuur = 0, kaartKlaar = false, wachtLijst = null, pauzeDoorOuder = false, nuTekst = "klaar";
 
 function later(fn, ms){ const r = run; return setTimeout(() => { if(r === run) fn(); }, ms); }
@@ -126,20 +130,17 @@ opties.skipPlayersLoad = true;
 opties.maxInactivity = 3600;
 ctx.start(opties);
 
-/* ---------- YouTube ---------- */
+/* ---------- YouTube: een hoofdspeler en een meetspeler ---------- */
 const tag = document.createElement("script");
 tag.src = "https://www.youtube.com/iframe_api";
 document.head.appendChild(tag);
+const VARS = { controls:0, disablekb:1, fs:0, rel:0, iv_load_policy:3, modestbranding:1, playsinline:1, cc_load_policy:0, hl:"nl" };
+function klaar(){ if(++klaarTeller < 2) return; apiKlaar = true; meld("klaar"); if(wachtStart){ begin(wachtStart); wachtStart = null; } }
 window.onYouTubeIframeAPIReady = () => {
-  speler = new YT.Player("speler", {
-    width:"100%", height:"100%",
-    playerVars:{ controls:0, disablekb:1, fs:0, rel:0, iv_load_policy:3, modestbranding:1, playsinline:1, cc_load_policy:0, hl:"nl" },
-    events:{
-      onReady(){ apiKlaar = true; meld("klaar"); if(wachtStart){ begin(wachtStart); wachtStart = null; } },
-      onStateChange: opStatus,
-      onError: opFout
-    }
-  });
+  speler = new YT.Player("speler", { width:"100%", height:"100%", playerVars:VARS,
+    events:{ onReady:klaar, onStateChange:spelerStatus, onError:spelerFout } });
+  meter = new YT.Player("meter", { width:"100%", height:"100%", playerVars:VARS,
+    events:{ onReady:klaar, onStateChange:meterStatus, onError:meterFout } });
 };
 function ondertitelsUit(){
   [0, 1000, 3000].forEach(ms => setTimeout(() => {
@@ -149,12 +150,12 @@ function ondertitelsUit(){
   }, ms));
 }
 
-/* ---------- Het blok ---------- */
+/* ---------- De uitzending ---------- */
 function begin(d){
   run++;
   slots = d.slots || []; si = 0; gespeeld = 0; cache = {}; offset = {};
   grens = ((d.doelMin || 60) + (d.spelingMin || 5)) * 60;
-  try{ speler.stopVideo(); }catch(e){}
+  try{ speler.stopVideo(); meter.stopVideo(); }catch(e){}
   const uur = new Date().getHours();
   $("wTitel").textContent = uur < 12 ? "Goedemorgen!" : uur < 18 ? "Goedemiddag!" : "Goedenavond!";
   $("wSub").textContent = "Zo meteen op KinderTV";
@@ -200,10 +201,10 @@ function toonBeeld(v){
   img.src = "https://i.ytimg.com/vi/" + v + "/hqdefault.jpg";
 }
 
-function leesLijst(){ try{ const pl = speler.getPlaylist(); return pl && pl.length ? pl : null; }catch(e){ return null; } }
+function leesLijst(){ try{ const pl = meter.getPlaylist(); return pl && pl.length ? pl : null; }catch(e){ return null; } }
 function laadLijst(l){
   wachtLijst = l;
-  speler.cuePlaylist({ list:l, listType:"playlist", index:0 });
+  meter.cuePlaylist({ list:l, listType:"playlist", index:0 });
   later(() => {
     if(wachtLijst !== l) return;
     const pl = leesLijst();
@@ -215,16 +216,16 @@ function laadLijst(l){
 }
 function lijstKlaar(pl){ const l = wachtLijst; wachtLijst = null; cache[l] = pl; peil(); }
 
-/* Video stil achter de kaart inladen en de lengte meten */
+/* De meetspeler laadt de aflevering stil en meet de lengte */
 function peil(){
   const sl = slots[si], ids = cache[sl.lijst];
   if(!ids || !ids.length) return volgendSlot();
   if(pogingen > 8){ waarschuw(sl.naam + ": geen speelbare aflevering gevonden, door naar de volgende"); return volgendSlot(); }
   fase = "peilen";
   const v = ids[(sl.index + (offset[sl.lijst] || 0)) % ids.length];
-  toonBeeld(v);
-  try{ speler.mute(); }catch(e){}
-  speler.loadVideoById(v);
+  huidigVideo = v; toonBeeld(v);
+  try{ meter.mute(); }catch(e){}
+  meter.loadVideoById(v);
   const p = pogingen;
   later(() => { if(fase === "peilen" && pogingen === p){ waarschuw(sl.naam + ": aflevering laadt niet, overgeslagen"); slaOver(); } }, 15000);
 }
@@ -232,31 +233,38 @@ function slaOver(){ const sl = slots[si]; offset[sl.lijst] = (offset[sl.lijst] |
 
 function peilDuur(){
   if(fase !== "peilen") return;
-  const d = speler.getDuration();
+  const d = meter.getDuration();
   if(!d){ later(peilDuur, 400); return; }
-  speler.pauseVideo(); speler.seekTo(0, true);
+  meter.stopVideo();
   const sl = slots[si];
   if(d > sl.maxMin * 60){ waarschuw(sl.naam + ": aflevering overgeslagen, te lang (" + Math.round(d/60) + " min, maximaal " + sl.maxMin + ")"); return slaOver(); }
   if(gespeeld > 0 && gespeeld + d > grens) return einde();
   huidigDuur = d; fase = "gereed"; probeerStart();
 }
 
+/* De hoofdspeler start de aflevering schoon, zonder eerdere pauze */
 function probeerStart(){
   if(fase !== "gereed" || !kaartKlaar) return;
   fase = "startend"; pauzeDoorOuder = false;
   try{ speler.unMute(); speler.setVolume(100); }catch(e){}
-  speler.seekTo(0, true); speler.playVideo();
-  later(() => { if(fase === "startend"){ fase = "video"; toon(null); } }, 8000);
+  speler.loadVideoById(huidigVideo);
+  later(() => { if(fase === "startend"){ fase = "video"; toon(null); } }, 10000);
 }
 
-function opStatus(e){
-  const S = YT.PlayerState;
+function meterStatus(e){
   if(wachtLijst){ const pl = leesLijst(); if(pl) lijstKlaar(pl); return; }
-  if(fase === "peilen" && e.data === S.PLAYING){ peilDuur(); return; }
+  if(fase === "peilen" && e.data === YT.PlayerState.PLAYING) peilDuur();
+}
+function meterFout(e){
+  if(wachtLijst || !["peilen","gereed"].includes(fase)) return;
+  meldFout(e.data); slaOver();
+}
+function spelerStatus(e){
+  const S = YT.PlayerState;
   if(e.data === S.PLAYING) ondertitelsUit();
   if(fase === "startend" && e.data === S.PLAYING){
     fase = "video";
-    later(() => { if(fase === "video" && !pauzeDoorOuder) toon(null); }, 1200);  /* kaart blijft even staan tot YouTube echt speelt */
+    later(() => { if(fase === "video" && !pauzeDoorOuder) toon(null); }, 1200);
     return;
   }
   if(fase === "video"){
@@ -265,20 +273,18 @@ function opStatus(e){
     else if(e.data === S.ENDED){ gespeeld += huidigDuur; volgendSlot(); }
   }
 }
-
-function opFout(e){
-  if(wachtLijst) return;
-  if(!["peilen","gereed","startend","video"].includes(fase)) return;
-  const sl = slots[si];
-  waarschuw(sl.naam + ": " + (e.data == 101 || e.data == 150 ? "inbedden niet toegestaan" : e.data == 100 ? "video bestaat niet meer" : "YouTube-fout " + e.data) + ", overgeslagen");
-  if(fase === "video" || fase === "startend") kaart(sl);
-  slaOver();
+function spelerFout(e){
+  if(!["startend","video"].includes(fase)) return;
+  meldFout(e.data); kaart(slots[si]); slaOver();
+}
+function meldFout(code){
+  waarschuw(slots[si].naam + ": " + (code == 101 || code == 150 ? "inbedden niet toegestaan" : code == 100 ? "video bestaat niet meer" : "YouTube-fout " + code) + ", overgeslagen");
 }
 
 function einde(){
   run++;
   fase = "einde"; nuTekst = "afgelopen";
-  try{ speler.stopVideo(); }catch(e){}
+  try{ speler.stopVideo(); meter.stopVideo(); }catch(e){}
   toon("einde"); stuurNu();
 }
 </script>
