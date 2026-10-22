@@ -55,9 +55,13 @@ ol.gids li:last-child{border-bottom:0}
 .stip{width:16px;height:16px;border-radius:50%;flex:none}
 ol.gids .pijl{border:0;background:var(--veld);border-radius:8px;width:32px;height:32px;font-size:16px;font-weight:700;flex:none}
 ol.gids .pijl:disabled{opacity:.3}
-ol.gids li{flex-wrap:wrap}
+ol.gids li{display:block}
+ol.gids .regel1{display:flex;align-items:center;gap:10px}
+ol.gids .acties{display:flex;align-items:center;gap:6px;margin-top:6px;padding-left:26px}
+ol.gids .acties .ruimte{flex:1}
+ol.gids .erna{border:0;background:var(--veld);border-radius:8px;height:32px;padding:0 10px;font-size:15px;font-weight:600;flex:none}
 ol.gids .nm{flex:1;min-width:0}
-ol.gids .aantal{border:1px solid var(--lijn);background:none;border-radius:8px;padding:0 6px;font-size:14px;margin-left:4px;color:var(--zacht)}
+ol.gids .aantal{border:1px solid var(--lijn);background:none;border-radius:8px;height:32px;padding:0 10px;font-size:15px;font-weight:600}
 ol.gids .klein{border:0;background:var(--veld);border-radius:8px;width:32px;height:32px;font-size:18px;font-weight:700;flex:none}
 ol.gids li.isTussen .nm{color:var(--zacht)}
 .picker{width:100%;background:var(--veld);border-radius:12px;padding:10px;margin-top:6px}
@@ -268,7 +272,7 @@ function teken(){
   const bt = $("balkTekst");
   bt.classList.toggle("vol", totaal > grens);
   if(totaal > grens) bt.innerHTML = `<b>Ongeveer ${totaal} min</b> bij een kijktijd van ${doel} min. Het blok stopt op tijd, de laatste aflevering(en) vallen weg.`;
-  else if(totaal < doel - 8) bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Er is nog ruimte voor zo’n ${doel - totaal} minuten.`;
+  else if(totaal < doel - 3) bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Er is nog ruimte voor zo’n ${doel - totaal} minuten.`;
   else bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Het blok zit vol.`;
 
   const kiesbaar = [...S.lib].filter(x => x.lijst && x.rol !== "uit").sort((a,b) => (a.rol === "tussendoor" ? 0 : 1) - (b.rol === "tussendoor" ? 0 : 1));
@@ -276,11 +280,16 @@ function teken(){
     <div class="chips">${kiesbaar.map(x => `<button data-kies="${x.id}"><span class="stip" style="background:${x.kleur}"></span>${esc(x.naam)}</button>`).join("")}</div>
     <button class="annuleer" data-annuleer="1">Annuleren</button></div>`;
   $("gids").innerHTML = (invoegNa === -1 && !vast ? `<li>${picker(-1)}</li>` : "") + (rijen.map((p, i) => `<li class="${p.rol === "tussendoor" ? "isTussen" : ""}">
-    ${vast ? "" : `<button class="pijl" data-op="${i}" ${i === 0 ? "disabled" : ""} aria-label="Eerder">↑</button><button class="pijl" data-neer="${i}" ${i === rijen.length - 1 ? "disabled" : ""} aria-label="Later">↓</button>`}
-    <span class="stip" style="background:${p.kleur}"></span>
-    <span class="nm">${esc(p.naam)}${vast ? (p.aantal > 1 ? " ×" + p.aantal : "") : `<button class="aantal" data-aantal="${i}" aria-label="Aantal afleveringen">${p.aantal}×</button>`}</span>
-    <span class="tijd">±${p.aantal * p.duur} min</span>
-    ${vast ? "" : `<button class="klein" data-plus="${i}" aria-label="Iets invoegen na ${esc(p.naam)}">+</button><button class="klein" data-weg="${i}" aria-label="Weghalen">×</button>`}
+    <div class="regel1"><span class="stip" style="background:${p.kleur}"></span>
+      <span class="nm">${esc(p.naam)}${p.aantal > 1 ? " ×" + p.aantal : ""}</span>
+      <span class="tijd">±${p.aantal * p.duur} min</span></div>
+    ${vast ? "" : `<div class="acties">
+      <button class="pijl" data-op="${i}" ${i === 0 ? "disabled" : ""} aria-label="Eerder">↑</button>
+      <button class="pijl" data-neer="${i}" ${i === rijen.length - 1 ? "disabled" : ""} aria-label="Later">↓</button>
+      <button class="aantal" data-aantal="${i}" aria-label="Aantal afleveringen">${p.aantal}×</button>
+      <span class="ruimte"></span>
+      <button class="erna" data-plus="${i}" aria-expanded="${invoegNa === i}">+ erna</button>
+      <button class="klein" data-weg="${i}" aria-label="Weghalen">×</button></div>`}
     ${invoegNa === i && !vast ? picker(i) : ""}</li>`).join("") || `<li>Zet minstens één serie op kern of wissel, of voeg iets toe.</li>`);
   $("eigenVolgorde").hidden = vast || !(S.week && S.week.week === weekNr());
   $("begin").hidden = vast;
