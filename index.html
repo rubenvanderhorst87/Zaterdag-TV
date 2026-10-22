@@ -22,6 +22,7 @@
 :root[data-theme="dark"]{--achter:#0E1A3A;--vlak:#18275A;--tekst:#F3F6FF;--zacht:#A9B6E0;--lijn:#2B3C74;--veld:#1F3068;color-scheme:dark}
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *,*::before,*::after{box-sizing:inherit}
+html,body{overflow-x:hidden}
 body{margin:0;background:var(--achter);color:var(--tekst);
   font-family:"Baloo 2",ui-rounded,"Segoe UI",system-ui,sans-serif;font-size:17px;line-height:1.35}
 button,input,select{font:inherit;color:inherit}
@@ -80,7 +81,8 @@ ol.gids .tijd{margin-left:auto;color:var(--zacht);font-size:15px;white-space:now
 .naam strong{display:block;font-size:18px;line-height:1.15}
 .naam small{color:var(--zacht);font-size:14px}
 .rij.uit .naam{opacity:.5}
-.rij-onder{display:flex;align-items:center;gap:10px;margin-top:8px;padding-left:26px}
+.rij-onder{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-top:8px;padding-left:26px}
+.seg{flex-wrap:wrap}
 .seg{display:flex;background:var(--veld);border-radius:10px;padding:3px}
 .seg button{border:0;background:none;border-radius:8px;padding:4px 8px;font-size:15px;font-weight:600;color:var(--zacht)}
 .seg button.aan{background:var(--nacht);color:#fff}
