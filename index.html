@@ -171,6 +171,8 @@ main,section{min-width:0}
         <div class="stap"><button data-inst="speling" data-d="-1" aria-label="Minder">−</button><output id="instSpeling"></output><button data-inst="speling" data-d="1" aria-label="Meer">+</button></div></div>
       <div class="regel"><span>Wisselplekken<small>Aantal wisselseries per uitzending</small></span>
         <div class="stap"><button data-inst="plekken" data-d="-1" aria-label="Minder">−</button><output id="instPlekken"></output><button data-inst="plekken" data-d="1" aria-label="Meer">+</button></div></div>
+      <div class="regel"><span>Maximaal prikkelniveau<small>Series daarboven komen niet in de uitzending</small></span>
+        <div class="stap"><button data-inst="maxPrikkel" data-d="-1" aria-label="Lager">−</button><output id="instMax" style="min-width:110px"></output><button data-inst="maxPrikkel" data-d="1" aria-label="Hoger">+</button></div></div>
       <label class="regel"><span>Cast-app-ID</span><input id="instApp" style="max-width:140px"></label>
       <button class="knop" id="resetAfl">Alle series opnieuw bij aflevering 1 laten beginnen</button>
     </div>
@@ -180,7 +182,7 @@ main,section{min-width:0}
 <script>
 const NS = "urn:x-cast:nl.zaterdagtv";
 const SLEUTEL = "zaterdagochtend-tv-v1";
-const PRIKKEL = ["extreem laag","laag","laag tot gemiddeld","gemiddeld"];
+const PRIKKEL = ["extreem laag","laag","laag tot gemiddeld","gemiddeld","gemiddeld tot hoog","hoog"];
 const KLEUREN = ["#FFC93C","#F7A8C8","#7FD6B9","#9EC5FF","#FF8A5B","#C9A7FF","#B5E07A","#FFB3A1","#8FE3E8","#F2D07A","#A7B8FF","#E5A3D6","#9ED6A0","#FFD3A1","#BFC8D9"];
 
 /* Startbibliotheek uit Rubens lijst */
@@ -215,8 +217,8 @@ let open = null, nu = null;
 
 /* ---------- Het plan van de volgende uitzending ---------- */
 function programmas(){
-  const kern = S.lib.filter(s => s.rol === "kern" && s.lijst);
-  const wissel = S.lib.filter(s => s.rol === "wissel" && s.lijst);
+  const kern = S.lib.filter(s => s.rol === "kern" && s.lijst && magMee(s));
+  const wissel = S.lib.filter(s => s.rol === "wissel" && s.lijst && magMee(s));
   const w = ronde();
   const extra = S.extra.week === w ? S.extra.n : 0;
   const n = Math.min(S.inst.plekken, wissel.length);
@@ -232,10 +234,12 @@ function programmas(){
   return lijst.map(s => ({ id:s.id, naam:s.naam, kleur:s.kleur, lijst:s.lijst, aantal:s.aantal, maxMin:s.maxMin, duur:s.duur, rol:s.rol }));
 }
 const serie = id => S.lib.find(x => x.id === id);
+const maxP = () => S.inst.maxPrikkel === undefined ? PRIKKEL.length - 1 : S.inst.maxPrikkel;
+const magMee = x => x.prikkel <= maxP();
 let invoegNa = null;
 function entriesNu(){
   if(S.week && S.week.week === ronde())
-    return S.week.entries.filter(e => { const x = serie(e.id); return x && x.lijst && x.rol !== "uit"; });
+    return S.week.entries.filter(e => { const x = serie(e.id); return x && x.lijst && x.rol !== "uit" && magMee(x); });
   return programmas().map(p => ({ id:p.id, aantal:p.aantal }));
 }
 function zetEntries(entries){ S.week = { week:ronde(), entries }; invoegNa = null; bewaar(); teken(); }
@@ -276,7 +280,7 @@ function teken(){
   else if(totaal < doel - 3) bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Er is nog ruimte voor zo’n ${doel - totaal} minuten.`;
   else bt.innerHTML = `<b>Ongeveer ${totaal} min</b> van ${doel} min. Het blok zit vol.`;
 
-  const kiesbaar = S.lib.filter(x => x.lijst && x.rol === "tussendoor");
+  const kiesbaar = S.lib.filter(x => x.lijst && x.rol === "tussendoor" && magMee(x));
   const picker = na => `<div class="picker"><p>${na < 0 ? "Aan het begin zetten:" : "Invoegen na " + esc(rijen[na].naam) + ":"}</p>
     <div class="chips">${kiesbaar.length ? "" : "<p>Nog geen tussendoortjes. Zet bij Programma’s een serie op Tussen.</p>"}${kiesbaar.map(x => `<button data-kies="${x.id}"><span class="stip" style="background:${x.kleur}"></span>${esc(x.naam)}</button>`).join("")}</div>
     <button class="annuleer" data-annuleer="1">Annuleren</button></div>`;
@@ -304,6 +308,7 @@ function teken(){
   $("instDoel").textContent = S.inst.doel + " min";
   $("instSpeling").textContent = S.inst.speling + " min";
   $("instPlekken").textContent = S.inst.plekken;
+  $("instMax").textContent = PRIKKEL[maxP()];
   $("instApp").value = S.inst.appId;
 }
 
@@ -341,7 +346,7 @@ function tekenLijst(){
         <span class="stip" style="background:${s.kleur}"></span>
         <button class="naam" data-open="${i}" aria-expanded="${open === s.id}">
           <strong>${esc(s.naam)}</strong>
-          <small>${PRIKKEL[s.prikkel]} · ±${s.duur} min${geenLink ? " · playlist ontbreekt" : ""}</small>
+          <small>${PRIKKEL[s.prikkel]} · ±${s.duur} min${geenLink ? " · playlist ontbreekt" : ""}${magMee(s) ? "" : " · boven het maximum"}</small>
         </button>
       </div>
       <div class="rij-onder">
@@ -391,7 +396,8 @@ $("toevoegen").onclick = () => {
 };
 document.querySelector(".inst").addEventListener("click", e => {
   const b = e.target.closest("button[data-inst]"); if(!b) return;
-  const k = b.dataset.inst, min = { doel:10, speling:0, plekken:0 }[k], max = { doel:180, speling:20, plekken:6 }[k];
+  const k = b.dataset.inst, min = { doel:10, speling:0, plekken:0, maxPrikkel:0 }[k], max = { doel:180, speling:20, plekken:6, maxPrikkel:PRIKKEL.length - 1 }[k];
+  if(S.inst[k] === undefined) S.inst[k] = max;
   S.inst[k] = Math.min(max, Math.max(min, S.inst[k] + +b.dataset.d));
   bewaar(); teken();
 });
