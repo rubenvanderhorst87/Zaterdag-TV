@@ -127,6 +127,11 @@ main,section{min-width:0}
 .inst .regel small{display:block;color:var(--zacht);font-size:14px}
 @media (prefers-reduced-motion: no-preference){ .balk span{transition:flex-grow .25s} }
 </style>
+<script>
+  /* Moet vóór het Cast-script staan: anders kan Google al klaar zijn voordat de app luistert, en blijft het cast-icoon weg */
+  window.__castKlaar = null;
+  window.__onGCastApiAvailable = ok => { window.__castKlaar = ok; if(window.__castInit) window.__castInit(ok); };
+</script>
 <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
 </head>
 <body>
@@ -328,7 +333,10 @@ function teken(){
 
 function tekenBediening(){
   const sessie = huidigeSessie();
-  $("verbinding").textContent = sessie ? "Verbonden met " + sessie.getCastDevice().friendlyName : "Niet verbonden met de tv";
+  let staat = null; try{ staat = cast.framework.CastContext.getInstance().getCastState(); }catch(e){}
+  $("verbinding").textContent = sessie ? "Verbonden met " + sessie.getCastDevice().friendlyName
+    : staat === "NO_DEVICES_AVAILABLE" ? "Geen tv gevonden. Zit je op de wifi thuis en staat de tv aan?"
+    : "Niet verbonden met de tv";
   const loopt = sessie && nu && !["rust","einde"].includes(nu.fase);
   $("bezig").hidden = !loopt;
   $("start").hidden = loopt;
@@ -452,7 +460,7 @@ function stuur(obj){
   if(!s){ $("melding").textContent = "Niet verbonden. Tik op het cast-icoon rechtsboven."; return; }
   s.sendMessage(NS, obj).catch(() => { $("melding").textContent = "Bericht kwam niet aan. Verbind opnieuw met de tv."; });
 }
-window.__onGCastApiAvailable = ok => {
+function initCast(ok){
   if(!ok){ $("melding").textContent = "Casten werkt alleen in Chrome."; return; }
   const ctx = cast.framework.CastContext.getInstance();
   ctx.setOptions({ receiverApplicationId:S.inst.appId, autoJoinPolicy:chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED });
@@ -472,8 +480,11 @@ window.__onGCastApiAvailable = ok => {
     if(e.sessionState === "SESSION_ENDED") nu = null;
     tekenBediening();
   });
+  ctx.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, () => tekenBediening());
   tekenBediening();
-};
+}
+window.__castInit = initCast;
+if(window.__castKlaar !== null) initCast(window.__castKlaar);
 
 $("start").onclick = () => {
   if(!gestartVandaag()){
